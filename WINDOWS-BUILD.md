@@ -155,13 +155,70 @@ indicate a design problem:
 
 ## 7. Signing
 
-Unsigned installers trigger SmartScreen. Before distributing outside the team:
+Unsigned installers trigger SmartScreen: the user sees "Windows protected your PC" and has to
+click through a warning. Before distributing outside the team, sign both the executables and
+the installers.
 
-1. Obtain an Authenticode code-signing certificate (an EV certificate avoids the worst of the
-   reputation delay).
-2. Add the certificate and password as repository secrets, and pass them to the Tauri CLI as
-   `TAURI_SIGNING_PRIVATE_KEY` / the `certificateThumbprint` + `digestAlgorithm` + `timestampUrl`
-   settings under `bundle.windows`.
-3. Re-run the build and verify the signature with `signtool verify /pa /v <installer>`.
+### What you need
 
-Do not distribute an unsigned build to users and call it a release.
+1. An **Authenticode code-signing certificate**. A standard OV certificate works but has to
+   build reputation; an **EV certificate** (hardware token or cloud HSM) avoids the worst of
+   the SmartScreen delay. Either way the certificate must be exportable to a `.pfx`, or held
+   in a cloud signing service.
+2. The certificate password, stored as a repository secret — never in the repo.
+
+### Configuring it
+
+Tauri signs through `bundle.windows.signCommand`, which is the most portable option because it
+works with a `.pfx` on disk, a hardware token, or Azure Trusted Signing. Add to
+`apps/desktop/src-tauri/tauri.conf.json` under `bundle`:
+
+```json
+"windows": {
+  "webviewInstallMode": { "type": "downloadBootstrapper" },
+  "nsis": { "installMode": "currentUser", "displayLanguageSelector": false },
+  "signCommand": {
+    "cmd": "signtool",
+    "args": [
+      "sign", "/sha1", "%1", "/fd", "sha256",
+      "/tr", "http://timestamp.digicert.com", "/td", "sha256",
+      "/f", "%2", "/p", "%3", "%4"
+    ]
+  }
+}
+```
+
+The placeholders are filled by the CI environment:
+
+| Placeholder | Meaning |
+|---|---|
+| `%1` | thumbprint of the signing certificate |
+| `%2` | path to the `.pfx` |
+| `%3` | certificate password |
+| `%4` | file to sign |
+
+In the workflow, add a step before the build that writes the `.pfx` from a secret to a
+temporary path, and export `TAURI_SIGNING_CERTIFICATE`, `TAURI_SIGNING_CERTIFICATE_PASSWORD`
+and the thumbprint as environment variables. Remove the `.pfx` in an `always()` step.
+
+Simpler alternative if you use Azure Trusted Signing or a cloud HSM: set `signCommand.cmd` to
+that service's CLI instead of `signtool`. Either way, the private key must never touch the
+repository or the build log.
+
+### Verifying
+
+```powershell
+signtool verify /pa /v Kavach_0.5.0_x64-setup.exe
+signtool verify /pa /v Kavach_0.5.0_x64_en-US.msi
+Get-AuthenticodeSignature .\Kavach_0.5.0_x64-setup.exe | Format-List
+```
+
+Expect `Status: Valid` and your certificate's subject. Then re-run
+`scripts/smoke-test-windows.ps1` — signing can change the binaries, so the smoke test must
+cover the signed artefacts, not the unsigned ones.
+
+### Current state
+
+**Not signed.** No certificate is available, so this configuration is documented but not
+applied. Do not distribute these installers to users as a release.
+

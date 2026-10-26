@@ -111,6 +111,8 @@ pub fn restore_checkpoint(workspace: String, project_id: String, checkpoint_id: 
     host::restore_checkpoint(&workspace, &project_id, &checkpoint_id)
 }
 
+/// Only used by the test below, to prove the shell and the host agree on the command list.
+#[cfg(test)]
 pub fn command_names() -> Vec<&'static str> {
     kavach_host::COMMAND_NAMES.to_vec()
 }

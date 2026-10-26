@@ -32,19 +32,25 @@ was "Upload build output on failure", which is `if: failure()` and correctly ski
 
 ## Artefacts
 
-| Artefact | Size | Digest (GitHub-computed SHA-256) |
+Downloaded from the run and verified locally. The per-file hashes below were recomputed in
+this environment from the downloaded binaries and **match** the values the build wrote into
+`installer-checksums.txt`.
+
+| File | SHA-256 (recomputed) | Type |
 |---|---|---|
-| `kavach-windows-installers` (both installers + `installer-checksums.txt`) | 2,641,463 bytes | `sha256:fe84cef93fb3efc6d16e2e3aace49238c1393099708cb4e9a8e182ad3d2288bb` |
-| `desktop-cargo-lock` (generated `Cargo.lock`) | 24,413 bytes | `sha256:0b7d9873ee95a1991a83b80630449f2576b1018a17ce4dac4db01138f5cd5db9` |
+| `Kavach_0.5.0_x64_en-US.msi` | `7ce128749f35edbf27fbf8a8f8482948333a8018d15baaa48b7e8d5829fada3d` | MSI, Windows Installer XML Toolset 3.14.1.8722, x64 |
+| `Kavach_0.5.0_x64-setup.exe` | `8c0cd24f14529b2a79f7b971fedfc292c15a71a9641a299c3f58eeca31504c91` | PE32 GUI, NSIS self-extracting |
 
-Artefact IDs 12646714063 and 12647008291; both expire 2027-01-24. Download from the run page:
-`https://github.com/saayad566-tech/kavach/actions/runs/40316051982`
+Artefact bundle `kavach-windows-installers.zip`: 2,641,463 bytes,
+`sha256:fe84cef93fb3efc6d16e2e3aace49238c1393099708cb4e9a8e182ad3d2288bb` — downloaded and
+digest-checked against the GitHub API value.
 
-**Per-installer SHA-256 values are not reproduced here.** They are written by the build into
-`installer-checksums.txt` inside the artefact above, and printed in the job log by the step
-"Checksum and list what was produced". The full log exceeded what this environment could hold,
-so the individual file hashes were not read back — and an unread hash is not evidence. The
-artefact digest above does cover both installers, since they are the artefact's only contents.
+Lockfile artefact `desktop-cargo-lock.zip`: 24,413 bytes,
+`sha256:0b7d9873ee95a1991a83b80630449f2576b1018a17ce4dac4db01138f5cd5db9` — downloaded,
+digest-checked, and its `Cargo.lock` (103,828 bytes, **407 pinned packages**) is now committed
+at `apps/desktop/src-tauri/Cargo.lock`.
+
+Run page: `https://github.com/saayad566-tech/kavach/actions/runs/40316051982`
 
 ## What the run proves, and what it does not
 
@@ -81,10 +87,17 @@ These are cosmetic except the last, which means symlink confinement is untested 
 we ship first. Fixing it needs a Windows-privileged symlink creation or a junction test, and a
 new build to verify.
 
-## Follow-ups this run creates
+## Follow-ups from this run
 
-1. Commit `Cargo.lock` from artefact 12647008291 so the Windows build is reproducible.
-2. Clear the three unused-item warnings.
-3. Exercise the symlink test on Windows.
-4. Install and smoke-test the installer (`WINDOWS-BUILD.md` §4).
-5. Sign the installers before any distribution.
+| # | Follow-up | Status |
+|---|---|---|
+| 1 | Commit `Cargo.lock` so the build is reproducible | **Done** — 407 packages pinned, digest verified |
+| 2 | Clear the three unused-item warnings | **Done** — `Path` and `read_trimmed` gated to Linux, `command_names` to test; `cargo test` emits no warnings |
+| 3 | Exercise the link-confinement test on Windows | **Code done, unverified on Windows** — the test now creates a directory symlink or junction and fails loudly if it cannot, instead of returning early |
+| 4 | Install and smoke-test the installer | **Script ready, not run** — `scripts/smoke-test-windows.ps1` automates 11 checks and walks a human through 8 more |
+| 5 | Sign the installers | **Blocked on a certificate** — configuration documented in `WINDOWS-BUILD.md` §7, not applied |
+
+Items 1 and 2 changed source after the build, so the released binaries correspond to commit
+`9347d6f0`, one commit earlier. The changes are a `cfg` gate on two Linux-only items and a
+`#[cfg(test)]` on a test helper: no behaviour changes. A rebuild is the only way to prove that
+rather than assert it, and it costs another run.

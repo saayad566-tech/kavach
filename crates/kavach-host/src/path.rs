@@ -153,15 +153,39 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    #[cfg(unix)]
+    fn make_dir_link(target: &Path, link: &Path) -> bool {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+
+    /// Windows: try a directory symlink first (needs Developer Mode or elevation), then a
+    /// junction, which needs neither. An earlier version of this test returned early on
+    /// Windows, so link confinement was never exercised on the platform we ship first.
+    #[cfg(windows)]
+    fn make_dir_link(target: &Path, link: &Path) -> bool {
+        if std::os::windows::fs::symlink_dir(target, link).is_ok() {
+            return true;
+        }
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
     #[test]
-    fn rejects_a_symlink_that_escapes_the_root() {
+    fn rejects_a_link_that_escapes_the_root() {
         let root = tmp("sym");
         let outside = tmp("outside");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
-        #[cfg(not(unix))]
-        return;
-
+        if !make_dir_link(&outside, &root.join("escape")) {
+            // Fail rather than skip: a silent skip is how this gap survived a release.
+            panic!(
+                "could not create a directory link in this environment, so link confinement is \
+                 UNTESTED here; run on a machine that permits symlinks or junctions"
+            );
+        }
         assert!(write_project_file(&root, "escape/pwned.txt", "no").is_err());
         assert!(!outside.join("pwned.txt").exists());
         std::fs::remove_dir_all(&root).ok();

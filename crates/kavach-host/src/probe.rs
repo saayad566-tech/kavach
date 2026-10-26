@@ -6,6 +6,9 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+// `Path` and `read_trimmed` are used only by the Linux GPU enumeration, so gating them
+// keeps the Windows build warning-free instead of hiding the warning with an allow.
+#[cfg(target_os = "linux")]
 use std::path::Path;
 
 use crate::exec::{run, ExecOptions};
@@ -41,6 +44,7 @@ pub struct Probe {
     pub probed_at: String,
 }
 
+#[cfg(target_os = "linux")]
 fn read_trimmed(path: &str) -> Option<String> {
     fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }

@@ -18,6 +18,19 @@ not a smoke test.
 
 ---
 
+## 0. Follow-ups from the Windows build — closed
+
+| Follow-up | Status |
+|---|---|
+| Commit `Cargo.lock` | **Done** — downloaded, digest-verified, 407 packages pinned |
+| Clear the three warnings | **Done** — gated rather than silenced; `cargo test` is warning-free |
+| Link-confinement test on Windows | **Code done, unproven on Windows** — now creates a symlink or junction and fails loudly if it cannot |
+| Smoke-test the installer | **Script ready, not run** — `scripts/smoke-test-windows.ps1`, 19 checks |
+| Sign the installers | **Blocked on a certificate** — config documented, not applied |
+
+The installers themselves were downloaded from the run and their SHA-256 values recomputed
+here; they match the build's own record. They are in the delivery alongside this report.
+
 ## 1. What this turn did
 
 You asked for the three deliverables to be inspected, every offline verification performed,
