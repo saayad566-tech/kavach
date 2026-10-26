@@ -1,8 +1,8 @@
 //! Kavach native host.
 //!
-//! No dependencies, by design: builds with `cargo build --offline`, so it compiles and
-//! tests in a container with no crates.io access and can be audited without reading a
-//! dependency tree.
+//! No dependencies, by design: it builds with `cargo build --offline`, so it compiles and
+//! tests without touching the network and can be audited without reading a dependency tree.
+//! That is a product decision, not a workaround for a restricted environment.
 //!
 //! Layout:
 //!   * `probe`    — what the machine actually is

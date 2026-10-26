@@ -15,35 +15,38 @@
 //     tauri_build::build()
 // which restores the default (all commands callable) without breaking anything else.
 
-fn main() {
-    let commands = [
+// `AppManifest::commands` takes `&'static [&'static str]` (verified against
+// tauri-build 2.7.4, src/acl.rs:104), so this must be a static slice — a local array
+// borrowed for the call would not compile.
+static COMMANDS: &[&str] = &[
         // Shell-only: only the Tauri app knows where its app-data directory is.
-        "workspace_root",
+    "workspace_root",
         // Everything else is a one-line delegation to kavach-host.
-        "probe_hardware",
-        "disk_usage",
-        "run_command",
-        "write_project_file",
-        "read_project_file",
-        "list_files",
-        "delete_project_file",
-        "hash_file",
-        "verify_model",
-        "install_model",
-        "extract_requirements",
-        "create_project",
-        "build_project",
-        "probe_runtime",
-        "security_scan",
-        "export_project",
-        "list_projects",
-        "list_checkpoints",
-        "restore_checkpoint",
-    ];
+    "probe_hardware",
+    "disk_usage",
+    "run_command",
+    "write_project_file",
+    "read_project_file",
+    "list_files",
+    "delete_project_file",
+    "hash_file",
+    "verify_model",
+    "install_model",
+    "extract_requirements",
+    "create_project",
+    "build_project",
+    "probe_runtime",
+    "security_scan",
+    "export_project",
+    "list_projects",
+    "list_checkpoints",
+    "restore_checkpoint",
+];
 
+fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&commands)),
+            .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
     )
     .expect("failed to run tauri-build");
 }

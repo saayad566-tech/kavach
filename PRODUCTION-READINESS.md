@@ -131,7 +131,7 @@ Skip link, `<main>` landmark, `role="status"` + `aria-live` on the badge and bus
 4. **Prove the current commit builds.** Code changed after the successful build (runtime,
    security, export, UI). The installers correspond to commit `9347d6f0`; a rebuild is needed
    to attach them to `HEAD`, and it costs another CI run.
-5. **Line coverage.** `cargo-llvm-cov` needs crates.io, so the gate is structural instead
+5. **Line coverage.** `cargo-llvm-cov` needs llvm-tools and an instrumented rebuild, so the gate is structural instead
    (every module tested, required suites present). The crash harness now exists and runs.
 
 ---

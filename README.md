@@ -28,7 +28,7 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 | Model-authored application code | **Working, with a safety rule** — the model may add files; they are kept only if the project still passes its own tests, and rolled back otherwise |
 | Desktop UI (static HTML/JS, 20 commands) | **Working** — 13 render and accessibility checks |
 | Export to a plain source tree | **Working** |
-| Tauri shell compiles | **Proven on Windows** — run 40316051982 |
+| Tauri shell compiles | **Proven on Windows** — run 40316051982. Dependency graph re-verified locally: `cargo fetch` resolves 405 crates, `tauri 2.12.5` |
 | Windows installers | **Built, unsigned, not yet smoke-tested** — see `BUILD-EVIDENCE.md` |
 | Production readiness | **Technical preview** — see `PRODUCTION-READINESS.md` and `AUDIT.md` |
 

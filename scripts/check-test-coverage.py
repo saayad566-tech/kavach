@@ -2,10 +2,10 @@
 """
 Structural test-coverage gate.
 
-This is NOT line coverage. `cargo-llvm-cov` needs crates.io, which this environment cannot
-reach, so instead of pretending, this checks the structure that line coverage would reveal as
-missing: every module has a test module, every module has a meaningful number of tests, and
-the suites that must exist for the product's claims do exist.
+This is NOT line coverage. `cargo-llvm-cov` needs llvm-tools and an instrumented rebuild,
+which is not wired up here, so instead of pretending, this checks the structure that line
+coverage would reveal as missing: every module has a test module, every module has a
+meaningful number of tests, and the suites that must exist for the product's claims exist.
 
 It catches the real regression — someone adds `runtime.rs` or `security.rs` and forgets the
 tests — which is the failure mode that actually happens.

@@ -2,7 +2,8 @@
 """
 Offline verification of the desktop shell and the Windows packaging setup.
 
-Nothing here compiles the Tauri shell — that needs crates.io and a system webview. What it
+Nothing here compiles the Tauri shell — that needs a system webview (webkit2gtk on Linux,
+WebView2 on Windows), which this environment does not have. What it
 does do is check every fact about the build that can be checked without one: that the icons
 are real icons of the right sizes, that the versions agree across three files, that every
 registered command exists, that the capability files are referenced and least-privileged,
@@ -296,7 +297,13 @@ if "tauri_build::try_build" not in build_rs and "tauri_build::build()" not in bu
 # When build.rs restricts the command surface with AppManifest, its list must match the
 # host exactly, or a command the UI needs becomes uncallable at runtime with no build error.
 if "AppManifest" in build_rs:
-    declared = set(re.findall(r'"([a-z_]+)"', build_rs.split("let commands")[1].split("];")[0]))
+    # The list is a `static COMMANDS: &[&str] = &[...]` because AppManifest::commands takes
+    # a 'static slice. Accept either spelling so a refactor cannot silently disable the check.
+    marker = "static COMMANDS" if "static COMMANDS" in build_rs else "let commands"
+    body = build_rs.split(marker, 1)[1].split("];", 1)[0]
+    declared = set(re.findall(r'"([a-z_]+)"', body))
+    if not declared:
+        fail("could not read the command list from build.rs, so it cannot be verified")
     expected = host_names | SHELL_ONLY
     missing = expected - declared
     extra = declared - expected

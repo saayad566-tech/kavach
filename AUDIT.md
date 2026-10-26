@@ -124,6 +124,35 @@ cargo test --offline --workspace
 
 ---
 
+## 6b. Correction: crates.io was never blocked
+
+For several turns this project recorded that `crates.io` was unreachable, and used that to
+justify leaving the Tauri shell uncompiled and the sandbox unimplemented. That was wrong.
+
+The original test sent `HEAD` requests to `https://crates.io` and `https://static.crates.io`.
+Both returned 403, and the conclusion was drawn from that. Tested properly with `GET`:
+
+| Endpoint | Result |
+|---|---|
+| `https://index.crates.io/config.json` (sparse index) | **200** |
+| `https://static.crates.io/crates/tauri/tauri-2.0.0.crate` | **200**, 255,828 bytes |
+| `https://crates.io` (the website) | 403 — the only one that is actually blocked |
+
+`cargo fetch` in `apps/desktop/src-tauri` now downloads the full graph: **405 crates**, and
+`Cargo.lock` resolves to `tauri 2.12.5`, `tauri-build 2.7.4`, 407 pinned packages.
+
+This did not unblock a build, but for a different reason than recorded: `webkit2gtk` is not in
+conda-forge and installing it needs root, and the `x86_64-pc-windows-msvc` std target cannot be
+installed because `static.rust-lang.org` is blocked. So the shell still cannot be compiled
+here — but the dependency graph is now *verified*, which it was not before.
+
+It also caught a real bug: `AppManifest::commands` takes `&'static [&'static str]`
+(`tauri-build 2.7.4`, `src/acl.rs:104`). `build.rs` was passing a local array, which would not
+have compiled. Reading the fetched source found it; no compiler was needed.
+
+**Lesson recorded rather than hidden:** a 403 from a HEAD request is not evidence that a host is
+blocked, and "blocked" was load-bearing for several design decisions.
+
 ## 7. What is still not true
 
 1. **No installer corresponds to this commit.** The binaries on record were built from
