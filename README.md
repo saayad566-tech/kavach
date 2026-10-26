@@ -11,7 +11,7 @@ cloud fallback.
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 66 tests, zero dependencies |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 70 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
 | Security scan of generated code | **Working** — high-severity findings fail verification |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
@@ -20,7 +20,7 @@ cloud fallback.
 | Export to a plain source tree | **Working** |
 | Tauri shell compiles | **Proven on Windows** — run 40316051982 |
 | Windows installers | **Built, unsigned, not yet smoke-tested** — see `BUILD-EVIDENCE.md` |
-| Production readiness | **Technical preview** — see `PRODUCTION-READINESS.md` |
+| Production readiness | **Technical preview** — see `PRODUCTION-READINESS.md` and `AUDIT.md` |
 
 Nothing here is claimed to work unless a command in `scripts/verify-all.sh` proves it, and
 that script stops short of claiming the shell compiles — only a real build does that.
@@ -48,10 +48,11 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 66 tests, no crates.io needed
+cargo test --offline --workspace          # 70 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)
+python3 scripts/check-test-coverage.py    # structural gate: every module tested
 ```
 
 ## Build
@@ -91,6 +92,7 @@ npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis
 
 | File | Purpose |
 |---|---|
+| `AUDIT.md` | Deep audit: method, research findings, 7 defects, compliance matrix |
 | `PRODUCTION-READINESS.md` | Criteria, honest status, and the path to shippable |
 | `WINDOWS-BUILD.md` | Reproducible build and signing procedure |
 | `BUILD-EVIDENCE.md` | The successful build: run, artefacts, checksums |

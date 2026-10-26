@@ -181,11 +181,17 @@ pub fn scan_content(path: &str, content: &str) -> Vec<Finding> {
 }
 
 fn has_aws_key(line: &str) -> bool {
+    // Byte slicing a &str panics if the index is not a char boundary, and this runs over
+    // arbitrary generated content — so work on the bytes throughout and only convert the
+    // ASCII window we already know is ASCII.
     let bytes = line.as_bytes();
-    for i in 0..bytes.len().saturating_sub(20) {
+    if bytes.len() < 20 {
+        return false;
+    }
+    for i in 0..=bytes.len() - 20 {
         if &bytes[i..i + 4] == b"AKIA" {
-            let tail = &line[i + 4..(i + 20).min(line.len())];
-            if tail.len() == 16 && tail.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) {
+            let window = &bytes[i + 4..i + 20];
+            if window.iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
                 return true;
             }
         }
@@ -258,6 +264,16 @@ mod tests {
         let findings = scan_content("k.pem", "-----BEGIN RSA PRIVATE KEY-----\nabc\n");
         assert_eq!(rules(&findings), vec!["private-key"]);
         assert_eq!(findings[0].severity, Severity::High);
+    }
+
+    #[test]
+    fn scanning_multibyte_text_does_not_panic() {
+        // A panic here would take down the build on any project containing non-ASCII text.
+        let content = "const label = '\u{1F600}\u{1F600} AKIAIOSFODNN7EXAMPLE \u{4F60}\u{597D}';\n";
+        let findings = scan_content("a.js", content);
+        assert!(findings.iter().any(|f| f.rule == "aws-access-key"), "{findings:?}");
+        // And a line that ends mid-multibyte must not panic either.
+        assert!(scan_content("b.js", "\u{4F60}\u{597D}AKIA").is_empty());
     }
 
     #[test]

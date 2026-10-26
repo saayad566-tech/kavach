@@ -94,6 +94,17 @@ if identifier == "com.tauri.dev":
 security = conf.get("app", {}).get("security", {})
 if not security.get("csp"):
     fail("no content security policy is set")
+csp = str(security.get("csp", ""))
+ui_files = list(UI.glob("*.html")) + list(UI.glob("*.js"))
+inline_styles = [f.name for f in ui_files if "style=" in f.read_text() or ".style." in f.read_text()]
+if "'unsafe-inline'" in csp and not inline_styles:
+    note("CSP allows 'unsafe-inline' for styles but the UI uses none; it could be tightened")
+if "'unsafe-inline'" not in csp and inline_styles:
+    fail(f"CSP forbids inline styles but {inline_styles} use them; the UI would render unstyled")
+if "unsafe-eval" in csp:
+    fail("CSP allows 'unsafe-eval', which is never needed here")
+if "object-src 'none'" not in csp:
+    fail("CSP does not block object-src; plugin content could be loaded")
 if security.get("capabilities") is None:
     fail("app.security.capabilities is not set, so the window would get the default set")
 

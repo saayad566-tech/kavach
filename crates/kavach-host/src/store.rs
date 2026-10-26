@@ -34,11 +34,28 @@ pub struct Store {
     pub projects: Vec<ProjectEntry>,
 }
 
+/// Seconds since the epoch, for human-facing timestamps.
 fn now() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
         .unwrap_or_default()
+}
+
+/// A unique id.
+///
+/// Second-resolution was not enough: two checkpoints taken inside the same second got the
+/// same id, so the second silently overwrote the first snapshot while the index kept both
+/// entries. Nanoseconds plus a process-local counter makes a collision implausible.
+fn unique_id(prefix: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{prefix}-{nanos:x}-{seq:x}")
 }
 
 fn clean(value: &str) -> String {
@@ -120,9 +137,13 @@ impl Store {
                 ));
             }
         }
-        write_project_file(&self.workspace, "index.tsv", &out)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+        // Write to a temporary file and rename, so a crash mid-write cannot leave a
+        // half-written index. Rename is atomic within a filesystem on every platform we
+        // ship; the old index survives if the process dies before the rename.
+        let target = Self::index_path(&self.workspace);
+        let temp = self.workspace.join("index.tsv.tmp");
+        write_project_file(&self.workspace, "index.tsv.tmp", &out).map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, &target).map_err(|e| format!("cannot replace the index: {e}"))
     }
 
     pub fn project_dir(&self, id: &str) -> PathBuf {
@@ -164,7 +185,7 @@ impl Store {
         }
         let hash = tree_hash(&snapshot);
         let entry = CheckpointEntry {
-            id: format!("cp-{}", now()),
+            id: unique_id("cp"),
             label: label.to_string(),
             tree_hash: hash,
             created_at: now(),
@@ -257,6 +278,40 @@ mod tests {
         assert!(removed.contains(&"src/extra.js".to_string()));
         assert_eq!(std::fs::read_to_string(dir.join("src/a.js")).unwrap(), "v1");
         assert!(!dir.join("src/extra.js").exists());
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn checkpoint_ids_are_unique_within_a_second() {
+        let ws = tmp("unique");
+        let mut store = Store::load(&ws);
+        let project = store.create_project("A web app to track orders", "web-app", "Orders");
+        write_project_file(&store.project_dir(&project.id), "a.js", "x").unwrap();
+
+        let first = store.checkpoint(&project.id, "one").unwrap();
+        let second = store.checkpoint(&project.id, "two").unwrap();
+        let third = store.checkpoint(&project.id, "three").unwrap();
+        let mut ids = vec![first.id.clone(), second.id.clone(), third.id.clone()];
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), 3, "checkpoint ids must not collide: {first:?} {second:?} {third:?}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_previous_index_intact() {
+        let ws = tmp("atomic");
+        let mut store = Store::load(&ws);
+        store.create_project("A web app to track orders", "web-app", "Orders");
+        store.save().unwrap();
+        let before = std::fs::read_to_string(ws.join("index.tsv")).unwrap();
+        assert!(before.starts_with("P\t"));
+
+        // Simulate a crash between writing the temp file and renaming: the index must be
+        // unchanged and still parseable.
+        std::fs::write(ws.join("index.tsv.tmp"), "P\tbroken\t").unwrap();
+        let reloaded = Store::load(&ws);
+        assert_eq!(reloaded.projects.len(), 1, "a stale temp file must not affect the index");
         std::fs::remove_dir_all(&ws).ok();
     }
 

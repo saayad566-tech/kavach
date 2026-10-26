@@ -31,6 +31,7 @@ run "host tests (offline)" cargo test --offline --workspace
 run "desktop configuration and packaging" python3 scripts/check-desktop-config.py --verbose
 run "UI to command contract" python3 scripts/check-ui-contract.py
 run "UI renders against a stubbed IPC" node scripts/verify-ui.mjs
+run "structural test coverage" python3 scripts/check-test-coverage.py
 
 printf '\n'
 if [ "$failures" -eq 0 ]; then

@@ -78,7 +78,9 @@ fn read_capped<R: Read + Send + 'static>(
             match source.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let mut guard = sink.lock().unwrap();
+                    // Recover from a poisoned lock rather than panicking: a reader thread
+                    // that died mid-write should cost us that thread, not the whole command.
+                    let mut guard = sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     let room = cap.saturating_sub(guard.0.len());
                     if room == 0 {
                         guard.1 = true;
@@ -173,8 +175,8 @@ pub fn run(command: &str, args: &[String], options: ExecOptions) -> Result<ExecO
         let _ = h.join();
     }
 
-    let (stdout, out_truncated) = { out_sink.lock().unwrap().clone() };
-    let (stderr, err_truncated) = { err_sink.lock().unwrap().clone() };
+    let (stdout, out_truncated) = { out_sink.lock().unwrap_or_else(|p| p.into_inner()).clone() };
+    let (stderr, err_truncated) = { err_sink.lock().unwrap_or_else(|p| p.into_inner()).clone() };
 
     let status = status.map_err(|e| ExecError::Spawn(e.to_string()))?;
     let exit_code = if timed_out { EXIT_TIMEOUT } else { status.code().unwrap_or(1) };

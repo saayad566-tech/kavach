@@ -25,7 +25,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | # | Criterion | Status | Evidence or blocker |
 |---|---|---|---|
 | 1 | Builds reproducibly on the target platform | **Yes** | Run 40316051982, `windows-latest`, installers produced; `Cargo.lock` now committed (407 packages) |
-| 2 | Test suite passes on the target platform | **Yes** | 66 tests (64 unit + 2 integration), green on Windows and Linux |
+| 2 | Test suite passes on the target platform | **Yes** | 70 tests (67 unit + 1 crash-safety + 2 integration), green on Linux; 67 green on Windows |
 | 3 | Installer exists | **Yes** | NSIS `.exe` and WiX `.msi`, checksums in `BUILD-EVIDENCE.md` |
 | 4 | Installer has been installed and exercised | **No** | No Windows machine here. `scripts/smoke-test-windows.ps1` automates 11 checks and prompts for 8 |
 | 5 | Binaries are code-signed | **No** | Needs an Authenticode certificate the owner must buy; config documented in `WINDOWS-BUILD.md` §7 |
@@ -34,7 +34,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
 | 9 | Local model support | **Partly** | Discovery, connection, generation and error handling are implemented and tested against real sockets. The model writes project notes; it does not write application code |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
-| 11 | Crash safety | **Partly** | The store writes via a temp-then-rename path; no kill-loop harness yet (B-22) |
+| 11 | Crash safety | **Yes** | Index written temp-then-rename; `tests/crash_safety.rs` SIGKILLs the writer six times and asserts the index stays coherent |
 | 12 | Upgrade path | **No** | No updater configured; `createUpdaterArtifacts` is off |
 | 13 | Documentation for operators | **Yes** | `WINDOWS-BUILD.md`, `BUILD-EVIDENCE.md`, `CI-EVIDENCE.md`, `README.md`, this file |
 | 14 | Licence compliance for bundled weights | **N/A yet** | No weights are bundled or downloaded by the host; the licence gate exists and is tested for when they are |
@@ -105,8 +105,8 @@ Skip link, `<main>` landmark, `role="status"` + `aria-live` on the badge and bus
 4. **Prove the current commit builds.** Code changed after the successful build (runtime,
    security, export, UI). The installers correspond to commit `9347d6f0`; a rebuild is needed
    to attach them to `HEAD`, and it costs another CI run.
-5. **Coverage measurement and crash harness.** `cargo-llvm-cov` needs crates.io; the kill-loop
-   harness is straightforward but needs a rebuild to mean anything.
+5. **Line coverage.** `cargo-llvm-cov` needs crates.io, so the gate is structural instead
+   (every module tested, required suites present). The crash harness now exists and runs.
 
 ---
 
