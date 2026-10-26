@@ -1,7 +1,18 @@
-# Kavach — Verification and Build Report (0.5.1)
+# Kavach — Verification and Build Report (0.5.2)
 
-**Milestone: offline verification of the deliverables, Tauri configuration and Windows
-packaging setup · 26 October 2026**
+**Milestone: first successful Windows build · 26 October 2026**
+
+**The Windows build succeeded.** Run 40316051982 on `windows-latest` produced both
+installers from commit `9347d6f0`:
+
+| File | Size | SHA-256 |
+|---|---|---|
+| `Kavach_0.5.0_x64-setup.exe` | 1.12 MiB | `8c0cd24f14529b2a79f7b971fedfc292c15a71a9641a299c3f58eeca31504c91` |
+| `Kavach_0.5.0_x64_en-US.msi` | 1.61 MiB | `7ce128749f35edbf27fbf8a8f8482948333a8018d15baaa48b7e8d5829fada3d` |
+
+39 host tests passed on Windows; the release build took 4 min 36 s. Full detail in
+`BUILD-EVIDENCE.md`. **The installers are unsigned and have not been installed or launched** —
+a successful build is not a smoke test.
 
 ---
 
