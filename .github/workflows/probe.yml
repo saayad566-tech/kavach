@@ -1,0 +1,13 @@
+name: probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [kavach-desktop]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say hello
+        run: echo "actions can run on this repository"
