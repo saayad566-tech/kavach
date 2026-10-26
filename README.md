@@ -7,6 +7,14 @@ tests, and reports honestly what it verified and what it did not.
 The device is the default execution environment. No account, no telemetry, no backend, no
 cloud fallback.
 
+## Free
+
+Apache-2.0, no account, no backend, no telemetry, no metered API, no bundled model weights.
+Build it locally with `./scripts/build-local.sh` or `scripts/build-windows.ps1`, or use a
+self-hosted runner — all zero-cost. The one genuine cost is a code-signing certificate if you
+want to distribute publicly without SmartScreen warnings; a free self-signed route exists for
+internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the claim.
+
 ## Status
 
 | Part | State |
@@ -53,17 +61,22 @@ python3 scripts/check-desktop-config.py   # icons, versions, capabilities, comma
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)
 python3 scripts/check-test-coverage.py    # structural gate: every module tested
+python3 scripts/check-free.py             # zero-cost audit: no paid service or account
 ```
 
 ## Build
 
-See `WINDOWS-BUILD.md`. Short version, on Windows with Visual Studio Build Tools and Rust
-installed:
+Free, local, no CI required:
 
 ```powershell
-cd apps/desktop/src-tauri
-npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis,msi
+.\scripts\build-windows.ps1 -Test      # Windows
 ```
+```bash
+./scripts/build-local.sh --test        # Linux, macOS
+```
+
+`WINDOWS-BUILD.md` has the prerequisites, the CI routes (self-hosted is free), the smoke-test
+checklist and the signing procedure.
 
 ## What the app does
 
@@ -94,7 +107,8 @@ npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis
 
 | File | Purpose |
 |---|---|
-| `AUDIT.md` | Deep audit: method, research findings, 7 defects, compliance matrix |
+| `FREE.md` | What "free" means here, and how it is verified |
+| `AUDIT.md` | Deep audit: method, research findings, 8 defects, compliance matrix |
 | `PRODUCTION-READINESS.md` | Criteria, honest status, and the path to shippable |
 | `WINDOWS-BUILD.md` | Reproducible build and signing procedure |
 | `BUILD-EVIDENCE.md` | The successful build: run, artefacts, checksums |

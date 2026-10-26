@@ -8,6 +8,12 @@ things I cannot do from here at all.
 
 ---
 
+## Cost
+
+Zero. No backend, no account, no metered API, no telemetry, no bundled weights. Building is
+free locally or on a self-hosted runner. The only genuine cost in the project is a public
+code-signing certificate. See `FREE.md`; `scripts/check-free.py` verifies it.
+
 ## Verdict
 
 **Not ready to sell. Ready for internal use and technical preview.**
@@ -28,14 +34,14 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 2 | Test suite passes on the target platform | **Yes** | 70 tests (67 unit + 1 crash-safety + 2 integration), green on Linux; 67 green on Windows |
 | 3 | Installer exists | **Yes** | NSIS `.exe` and WiX `.msi`, checksums in `BUILD-EVIDENCE.md` |
 | 4 | Installer has been installed and exercised | **No** | No Windows machine here. `scripts/smoke-test-windows.ps1` automates 11 checks and prompts for 8 |
-| 5 | Binaries are code-signed | **No** | Needs an Authenticode certificate the owner must buy; config documented in `WINDOWS-BUILD.md` §7 |
+| 5 | Binaries are code-signed | **Partly** | Free self-signed route implemented (`scripts/make-self-signed-cert.ps1`) for internal use; public distribution still needs a paid certificate, which is a business decision |
 | 6 | Generated code is sandboxed | **No** | Runs as a child process with an allow-list, timeout and path guard. No WASM or container isolation. Largest security gap |
 | 7 | Secrets are not committed or generated | **Yes** | `security.rs` scans every generated project; a high-severity finding fails verification |
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
 | 11 | Crash safety | **Yes** | Index written temp-then-rename; `tests/crash_safety.rs` SIGKILLs the writer six times and asserts the index stays coherent |
-| 12 | Upgrade path | **No** | No updater configured; `createUpdaterArtifacts` is off |
+| 12 | Upgrade path | **No** | No updater configured. Tauri's updater keys are free (ed25519), so this is work, not cost |
 | 13 | Documentation for operators | **Yes** | `WINDOWS-BUILD.md`, `BUILD-EVIDENCE.md`, `CI-EVIDENCE.md`, `README.md`, this file |
 | 14 | Licence compliance for bundled weights | **N/A yet** | No weights are bundled or downloaded by the host; the licence gate exists and is tested for when they are |
 | 15 | Privacy policy / terms | **No** | A product decision and a legal one, not something to invent here |

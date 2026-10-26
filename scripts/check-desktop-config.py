@@ -289,8 +289,24 @@ for rs in sorted((DESKTOP / "src").glob("*.rs")) + sorted((HOST / "src").glob("*
         if stripped.startswith("//") and re.search(r"\b(TODO|FIXME)\b", stripped):
             fail(f"{rs.name} has a {stripped[:60]!r} comment")
 
-if (DESKTOP / "build.rs").read_text().strip() != "fn main() {\n    tauri_build::build()\n}":
-    fail("build.rs does not call tauri_build::build(), which Tauri requires")
+build_rs = (DESKTOP / "build.rs").read_text()
+if "tauri_build::try_build" not in build_rs and "tauri_build::build()" not in build_rs:
+    fail("build.rs does not call tauri-build")
+
+# When build.rs restricts the command surface with AppManifest, its list must match the
+# host exactly, or a command the UI needs becomes uncallable at runtime with no build error.
+if "AppManifest" in build_rs:
+    declared = set(re.findall(r'"([a-z_]+)"', build_rs.split("let commands")[1].split("];")[0]))
+    expected = host_names | SHELL_ONLY
+    missing = expected - declared
+    extra = declared - expected
+    for name in sorted(missing):
+        fail(f"build.rs AppManifest omits {name!r}; the UI could not call it")
+    for name in sorted(extra):
+        fail(f"build.rs AppManifest lists {name!r}, which no command implements")
+    note(f"app manifest restricts the command surface to {len(declared)} commands")
+else:
+    note("build.rs does not restrict the command surface; every registered command is callable from the webview")
 
 # Windows-only code cannot be compiled here; at least confirm the FFI is declared once and used once.
 probe = (HOST / "src" / "probe.rs").read_text()

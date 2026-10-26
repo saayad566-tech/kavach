@@ -1,0 +1,71 @@
+name: build-self-hosted
+
+# The free CI path for a private repository.
+#
+# GitHub Actions minutes are free for public repositories and for self-hosted runners, and
+# metered for private repositories on hosted runners. If you want the repository to stay
+# private and want to spend nothing, register any Windows machine you own as a self-hosted
+# runner and dispatch this workflow. Nothing is billed.
+#
+# Setup, once, on the Windows machine:
+#   1. Settings -> Actions -> Runners -> New self-hosted runner -> Windows.
+#   2. Follow the download and configure commands GitHub prints. Label the runner
+#      `kavach-windows` in addition to the defaults.
+#   3. Leave the runner service running (the configure script can install it as a service).
+#
+# Then: Actions -> build-self-hosted -> Run workflow.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows installers on your own machine (free)
+    runs-on: [self-hosted, windows, kavach-windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Report the toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          node --version
+
+      - name: Offline verification
+        shell: pwsh
+        run: |
+          cargo test --offline --workspace
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build the installers
+        shell: pwsh
+        working-directory: apps/desktop/src-tauri
+        run: |
+          npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis,msi
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $bundle = 'apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle'
+          $files = Get-ChildItem -Path $bundle -Recurse -File -Include *.exe, *.msi
+          if (-not $files) { throw "no installer was produced" }
+          $lines = $files | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
+          }
+          $lines | Write-Host
+          $lines | Set-Content -Path installer-checksums.txt
+
+      - name: Keep the installers as a workflow artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kavach-windows-installers
+          path: |
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            installer-checksums.txt
+          if-no-files-found: error
