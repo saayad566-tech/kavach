@@ -1,9 +1,8 @@
 name: build
 
 on:
-  push:
-    branches: [main, kavach-desktop]
-  pull_request:
+  # Dispatch only. An ordinary push must never spend Actions minutes without the owner
+  # asking for it; on 26 Oct a push-triggered run started and had to be cancelled.
   workflow_dispatch:
 
 permissions:

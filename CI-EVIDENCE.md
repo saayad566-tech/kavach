@@ -1,49 +1,59 @@
 # CI evidence — `saayad566-tech/kavach`
 
-Recorded 26 October 2026, 08:00 UTC. Branch `kavach-desktop`.
+Recorded 26 October 2026. Branch `kavach-desktop`.
 
 ## Runs
 
-| Run | Workflow | Event | Conclusion | Jobs | Steps executed | Job logs |
+| Run | Workflow | Event | Head | Conclusion | Steps executed | Notes |
 |---|---|---|---|---|---|---|
-| 40262828033 | build | push | failure | host (failed) + windows (skipped) | **0** | none (`BlobNotFound`) |
-| 40262831721 | build | workflow_dispatch | failure | host (failed) + windows (skipped) | **0** | none |
-| 40262971751 | probe | push | failure | hello (failed) | **0** | none |
-| 40262971822 | build | push | failure | host (failed) + windows (skipped) | **0** | none |
+| 40262828033 | build | push | bb51e9e9 | failure | **0** | job log absent (`BlobNotFound`) |
+| 40262831721 | build | workflow_dispatch | bb51e9e9 | failure | **0** | same |
+| 40262971751 | probe (`echo`) | push | d2771954 | failure | **0** | same |
+| 40262971822 | build | push | d2771954 | failure | **0** | same |
+| 40287981728 | build | push | 86d36be8 | **cancelled** | host: 14/14 steps green; windows: 0 | cancelled by the assistant 49 s after start |
 
-Total runs on the repository: 4. All four completed as `failure` in roughly two seconds.
+## What changed, and a correction
 
-## Interpretation
+The first four runs failed in about two seconds with `steps: []` and no job logs. I read that
+as an exhausted Actions allowance. **That reading is now contradicted by evidence:** run
+40287981728 started normally and its `host` job executed every step successfully on a real
+runner. So Actions does work on this repository; the earlier failures remain unexplained
+(transient platform condition or account state that has since cleared). The allowance
+arithmetic in the previous version of this file was suggestive, not causal, and should not be
+relied on.
 
-A one-step workflow whose only step is `run: echo "actions can run on this repository"` failed
-in exactly the same way as the full build — `completed/failure`, `steps: []`, and the job-log
-blob does not exist. No shell command ever ran, so:
+## The host job passed on CI
 
-- this is **not** a YAML error: the workflow was parsed and a run was created;
-- this is **not** a compiler error: `cargo` was never invoked;
-- the runner never picked the job up.
+Run 40287981728, job "Offline verification (no crates.io, no compiler for the shell)", 49 s:
 
-## Supporting facts
+| Step | Result |
+|---|---|
+| Set up job, checkout, rust-toolchain, setup-node, setup-python | success |
+| Python tooling for the static checks | success |
+| **Host tests (offline, zero dependencies)** | **success** |
+| **Desktop configuration and packaging setup** | **success** |
+| **UI only calls commands that exist** | **success** |
+| **UI renders against a stubbed IPC** | **success** |
 
-| Fact | Value | Source |
-|---|---|---|
-| Repository Actions enabled | `{"allowed_actions":"all","enabled":true}` | Actions permissions API |
-| October Actions Linux minutes | ~6,781 | Billing usage report |
-| October Actions Windows minutes | ~661 (billed at 2× → ~1,322) | Billing usage report |
-| Total billed minutes in October | **~8,100** | sum of the above |
-| Included allowance, free plan, private repositories | **2,000 minutes/month** | GitHub pricing |
-| Private-repository jobs that did run | 15–18 October (`god-console`, `ai-work-stream`, `analyzerx-1.4.0-private`) | Billing usage report |
+That is the offline suite passing on a clean machine that is not the development container —
+the strongest verification obtained so far, and it costs nothing to keep proving.
 
-## Conclusion
+## The Windows job did not run
 
-The account's Actions allowance is exhausted, so GitHub refuses to start any job — including a
-one-step `echo`. This is a billing condition, not a defect in this repository, and no code
-change will make the Windows job start until the allowance resets or the spending limit is
-raised. Raising it is a decision for the account owner.
+`needs: host` was satisfied, but the run was cancelled immediately afterwards, so the
+"Windows installers (.exe / .msi)" job shows `steps: 0`. **No Windows build has ever been
+attempted.** Cost of the cancelled run: one Linux runner minute (49 s, rounded up).
 
-## How to confirm independently
+## Consequence for this repository
 
-1. Actions tab → run 40262971751 (`probe`). It has one step and it did not run.
-2. Settings → Billing and plans → Plans and usage → Actions minutes used this month.
-3. Re-dispatch `probe` after the allowance resets; a single green `echo` proves the runner
-   path works and the `build` job can then be attempted.
+`build.yml` now triggers on `workflow_dispatch` only. A push cannot start a run, so no
+Actions minutes are spent unless someone asks for them explicitly.
+
+## To attempt the Windows build (needs the owner's approval)
+
+```bash
+gh workflow run build.yml --ref kavach-desktop   # or: Actions tab -> build -> Run workflow
+```
+
+Budget: one Linux minute for the host job, then roughly 12–20 minutes of wall clock on
+`windows-latest`, billed at 2× — call it 24–40 billed minutes.

@@ -20,7 +20,7 @@ reproducible Windows build procedure prepared — with no paid CI used and no in
 | Verify Windows packaging setup | **Yes** — bundle targets, icons, workflow semantics, §3 |
 | Reproducible Windows build procedure | **Yes** — `WINDOWS-BUILD.md` |
 | Local inference marked unimplemented | **Yes** — in the UI, in every delivery report, and in the README status table |
-| No paid CI minutes used | **Yes** — nothing dispatched this turn |
+| No paid CI minutes used | **Not quite — see §2a.** A push-triggered run started and was cancelled after 49 s (~1 Linux minute). CI is now dispatch-only |
 | No installer claimed | **Yes** — no installer exists |
 
 ---
@@ -39,6 +39,29 @@ empty — the pod had been recycled again, so `kavach-source.zip`, `CI-EVIDENCE.
 That is a real limitation of the inspection: I verified the *repository contents*, not the
 bytes of the zip you downloaded. The zip was built from that same tree, and the checksums are
 recomputed and reported in §6.
+
+---
+
+## 2a. A run started, and it corrects my previous diagnosis
+
+Pushing this revision triggered `build.yml` (which had a `push` trigger), and the run actually
+started — contrary to my previous report, which concluded that the account's Actions allowance
+was exhausted. I cancelled it 49 seconds in, before the Windows job began. What that run
+proved, at a cost of about one Linux runner minute:
+
+| Step | Result |
+|---|---|
+| Host tests (offline, zero dependencies) | **success** |
+| Desktop configuration and packaging setup | **success** |
+| UI only calls commands that exist | **success** |
+| UI renders against a stubbed IPC | **success** |
+
+So the entire offline suite passes on a clean GitHub runner, not just in this container. The
+earlier four failures (zero steps, no logs) remain unexplained and my allowance explanation
+should not be relied on. `build.yml` now triggers on `workflow_dispatch` only, so no push can
+spend minutes again.
+
+**No Windows build has been attempted at any point.**
 
 ---
 
@@ -120,11 +143,10 @@ Checksums are given in the chat reply.
 
 ## 7. Exact remaining blockers
 
-**Blocker 1 — Actions allowance (only blocker for the Windows build).** GitHub refuses to
-start any job on the account: four runs, all `failure` in ~2 s, `steps: []`, no job logs,
-including a one-step `echo`. October usage ~8,100 billed minutes against 2,000 included.
-Resolving it changes billing, so it needs your approval. Nothing else in the repository is
-blocking the build.
+**Blocker 1 — approval to spend CI minutes, not a technical blocker.** The previous diagnosis
+(allowance exhausted) is wrong: a run started normally on 26 Oct and the host job passed all
+14 steps. The earlier zero-step failures are unexplained. What is needed now is your go-ahead
+to run the Windows job, roughly 24–40 billed minutes.
 
 **Blocker 2 — first-compile risk in the Tauri shell (expected, not yet characterised).** The
 shell has never been through `rustc` with the Tauri macros. The commands delegate correctly
