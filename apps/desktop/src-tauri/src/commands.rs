@@ -119,11 +119,17 @@ pub fn command_names() -> Vec<&'static str> {
 mod tests {
     use super::*;
 
+    fn temp_dir() -> String {
+        std::env::temp_dir().to_string_lossy().to_string()
+    }
+
     #[test]
     fn commands_delegate_to_the_tested_host() {
-        assert!(probe_hardware("/tmp".into()).starts_with("{\"ok\":true"));
-        assert!(run_command("/tmp".into(), "rm".into(), vec!["-rf".into(), "/".into()], 1000).contains("permission-denied"));
-        assert!(write_project_file("/tmp/kavach-tauri-guard".into(), "../escape".into(), "x".into()).contains("path-rejected"));
+        let tmp = temp_dir();
+        assert!(probe_hardware(tmp.clone()).starts_with("{\"ok\":true"));
+        assert!(run_command(tmp.clone(), "rm".into(), vec!["-rf".into(), "/".into()], 1000).contains("permission-denied"));
+        let guard = format!("{tmp}/kavach-tauri-guard");
+        assert!(write_project_file(guard, "../escape".into(), "x".into()).contains("path-rejected"));
         assert!(extract_requirements("hi".into()).contains("too short"));
     }
 
