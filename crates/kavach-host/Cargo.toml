@@ -1,0 +1,16 @@
+[package]
+name = "kavach-host"
+version = "0.5.0"
+edition = "2021"
+rust-version = "1.77"
+license = "Apache-2.0"
+description = "Kavach native host: hardware probe, sandboxed execution, model verification, and the application builder"
+
+# Deliberately empty: this crate builds with `cargo build --offline`, so it can be
+# compiled and tested in a container with no crates.io access, and audited without
+# reading a dependency tree. Everything is std plus a few hand-declared libc calls.
+[dependencies]
+
+[lib]
+name = "kavach_host"
+path = "src/lib.rs"

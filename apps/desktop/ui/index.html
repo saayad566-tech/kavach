@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Kavach</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Kavach</h1>
+        <p class="muted">Local-first application builder · no account · no telemetry</p>
+      </div>
+      <span id="host-badge" class="pill">connecting…</span>
+    </header>
+
+    <main>
+      <section class="card" id="device-card">
+        <h2>This device</h2>
+        <p class="muted" id="device-sub">Probing…</p>
+        <dl class="facts" id="device-facts"></dl>
+        <details id="unmeasured-details">
+          <summary>What the probe could not measure</summary>
+          <ul id="unmeasured" class="tight"></ul>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>Build something</h2>
+        <label class="field">
+          <span>What do you want to build?</span>
+          <textarea id="prompt" rows="3">Build a web app to manage invoices and clients with search and export</textarea>
+        </label>
+        <div class="row">
+          <button id="build" class="primary">Build it</button>
+          <button id="preview-req">Show requirements</button>
+          <span id="busy" class="muted"></span>
+        </div>
+        <p id="error" class="error" hidden></p>
+      </section>
+
+      <section class="card" id="requirements-card" hidden>
+        <h2>What Kavach understood</h2>
+        <p class="muted" id="req-sub"></p>
+        <div id="req-body"></div>
+      </section>
+
+      <section class="card" id="report-card" hidden>
+        <h2>Delivery report</h2>
+        <p class="muted" id="report-sub"></p>
+        <table class="grid">
+          <thead><tr><th>Stage</th><th>Result</th><th>Detail</th></tr></thead>
+          <tbody id="stages"></tbody>
+        </table>
+        <h3>Limitations</h3>
+        <ul id="limitations" class="tight"></ul>
+        <h3>Files</h3>
+        <ul id="files" class="tight files"></ul>
+        <details>
+          <summary>Checkpoints</summary>
+          <ul id="checkpoints" class="tight"></ul>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>Projects</h2>
+        <ul id="projects" class="tight"></ul>
+        <p class="muted" id="projects-empty">Nothing yet.</p>
+      </section>
+    </main>
+
+    <footer class="muted">
+      Everything here runs on this machine. The window holds no filesystem or shell
+      permission; it can only call the commands listed in the Rust shell, which apply the
+      command allow-list, the timeout clamp and the path guard.
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

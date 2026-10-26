@@ -1,0 +1,77 @@
+name: build
+
+on:
+  push:
+    branches: [main, kavach-desktop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: Native host (Rust, offline, no crates.io)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Unit and integration tests
+        run: cargo test --offline --workspace
+      - name: Desktop configuration is internally consistent
+        run: python3 scripts/check-desktop-config.py
+      - name: UI renders against a stubbed IPC
+        run: node scripts/verify-ui.mjs
+      - name: Commands used by the UI all exist in the host
+        run: python3 scripts/check-ui-contract.py
+
+  windows:
+    name: Windows installer (.exe / .msi)
+    needs: host
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Host tests on Windows
+        run: cargo test --offline --workspace
+
+      - name: Build the desktop application and installers
+        working-directory: apps/desktop/src-tauri
+        run: npx --yes @tauri-apps/cli@^2 build --target x86_64-pc-windows-msvc --bundles nsis,msi
+
+      - name: List what was produced
+        shell: bash
+        run: |
+          find apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle -type f \
+            \( -name '*.exe' -o -name '*.msi' \) -print0 | xargs -0 -r sha256sum
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: kavach-windows-installers
+          path: |
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kavach-windows-failure
+          path: apps/desktop/src-tauri/target/**/*.log
+          if-no-files-found: ignore
