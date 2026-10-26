@@ -28,6 +28,10 @@ pub const ALLOWED_COMMANDS: &[&str] = &[
 
 pub const MAX_TIMEOUT_MS: u64 = 600_000;
 
+/// A single file a generated project writes may not exceed this. Big enough for any real
+/// build artefact, small enough that filling a disk takes deliberate effort.
+pub const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
+
 /// Envelope helper for shell-only commands that must return the same JSON shape.
 pub fn json_ok_path(path: &str) -> String {
     ok(Json::object().str("path", path))
@@ -108,7 +112,17 @@ pub fn run_command(cwd: &str, command: &str, args: &[String], timeout_ms: u64) -
     }
 
     let timeout = timeout_ms.clamp(1_000, MAX_TIMEOUT_MS);
-    match run(command, args, ExecOptions { cwd: Some(cwd.to_string()), timeout_ms: timeout, max_output_bytes: 256 * 1024 }) {
+    // Every command a generated project runs gets resource limits: CPU time slightly above
+    // the wall-clock budget, and a per-file write cap so a runaway build cannot fill the
+    // disk. Both are kernel-enforced, so they hold for grandchildren too.
+    let options = ExecOptions {
+        cwd: Some(cwd.to_string()),
+        timeout_ms: timeout,
+        max_output_bytes: 256 * 1024,
+        cpu_seconds: Some(timeout / 1000 + 5),
+        max_file_bytes: Some(MAX_FILE_BYTES),
+    };
+    match run(command, args, options) {
         Ok(outcome) => ok(Json::object()
             .str("command", &outcome.command)
             .num("exitCode", outcome.exit_code as i64)

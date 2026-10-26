@@ -15,7 +15,23 @@ use std::os::unix::process::CommandExt;
 extern "C" {
     fn setsid() -> i32;
     fn kill(pid: i32, sig: i32) -> i32;
+    fn setrlimit(resource: i32, limits: *const Rlimit) -> i32;
 }
+
+/// `struct rlimit`. Both fields are `rlim_t`, which is 64-bit on every platform we ship.
+#[cfg(unix)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Rlimit {
+    current: u64,
+    maximum: u64,
+}
+
+// Values from <sys/resource.h>. They are the same on Linux and the BSDs (macOS included).
+#[cfg(unix)]
+const RLIMIT_CPU: i32 = 0;
+#[cfg(unix)]
+const RLIMIT_FSIZE: i32 = 1;
 
 #[cfg(unix)]
 const SIGKILL: i32 = 9;
@@ -55,6 +71,12 @@ pub struct ExecOptions {
     pub cwd: Option<String>,
     pub timeout_ms: u64,
     pub max_output_bytes: usize,
+    /// Wall-clock is already enforced; this caps CPU *time*, which catches a process that
+    /// burns CPU without ever letting the poll loop see it exit.
+    pub cpu_seconds: Option<u64>,
+    /// Refuse to let a command fill the disk. Enforced by the kernel (SIGXFSZ), so it
+    /// applies to every file the child opens, not just the ones we know about.
+    pub max_file_bytes: Option<u64>,
 }
 
 impl Default for ExecOptions {
@@ -63,6 +85,8 @@ impl Default for ExecOptions {
             cwd: None,
             timeout_ms: 120_000,
             max_output_bytes: 256 * 1024,
+            cpu_seconds: None,
+            max_file_bytes: None,
         }
     }
 }
@@ -134,10 +158,29 @@ pub fn run(command: &str, args: &[String], options: ExecOptions) -> Result<ExecO
     }
     #[cfg(unix)]
     unsafe {
-        cmd.pre_exec(|| {
+        let cpu_seconds = options.cpu_seconds;
+        let max_file_bytes = options.max_file_bytes;
+        cmd.pre_exec(move || {
+            // Own process group, so the whole tree can be killed on timeout.
             setsid();
+            // Kernel-enforced limits. `pre_exec` runs between fork and exec, so only
+            // async-signal-safe calls belong here; setrlimit is one.
+            if let Some(seconds) = cpu_seconds {
+                let limits = Rlimit { current: seconds, maximum: seconds };
+                setrlimit(RLIMIT_CPU, &limits);
+            }
+            if let Some(bytes) = max_file_bytes {
+                let limits = Rlimit { current: bytes, maximum: bytes };
+                setrlimit(RLIMIT_FSIZE, &limits);
+            }
             Ok(())
         });
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows has no equivalent here; containment is the process-tree kill on timeout.
+        // A Job Object would be the right tool and is recorded as pending work, because a
+        // mistyped FFI struct is worse than an absent limit.
     }
 
     let mut child = cmd.spawn().map_err(|e| ExecError::Spawn(e.to_string()))?;
@@ -255,6 +298,53 @@ mod tests {
         .unwrap();
         assert!(out.truncated);
         assert!(out.stdout.len() <= 1024);
+    }
+
+    #[test]
+    fn cpu_time_limit_kills_a_runaway_loop() {
+        // The wall-clock timeout here is deliberately generous: the CPU limit must be what
+        // stops it, and it must stop it quickly.
+        let started = Instant::now();
+        let out = run(
+            "sh",
+            &args(&["-c", "while :; do :; done"]),
+            ExecOptions { timeout_ms: 30_000, cpu_seconds: Some(1), ..Default::default() },
+        )
+        .unwrap();
+        assert!(!out.timed_out, "the wall-clock timeout should not have fired");
+        assert_ne!(out.exit_code, 0, "a CPU limit breach must not look like success");
+        assert!(started.elapsed() < Duration::from_secs(15), "took {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn file_size_limit_stops_a_command_filling_the_disk() {
+        let dir = std::env::temp_dir().join(format!("kavach-fsize-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = run(
+            "sh",
+            // `&&` so the shell does not carry on after the writer dies; with `;` the
+            // shell continues and the exit code hides the failure.
+            &args(&["-c", "head -c 5000000 /dev/zero > big.bin && echo done"]),
+            ExecOptions {
+                cwd: Some(dir.to_string_lossy().to_string()),
+                timeout_ms: 20_000,
+                max_file_bytes: Some(4096),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let written = std::fs::metadata(dir.join("big.bin")).map(|m| m.len()).unwrap_or(0);
+        assert!(written <= 8192, "the file limit did not hold: {written} bytes written");
+        assert!(!out.stdout.contains("done"), "the command should not have completed");
+        assert_ne!(out.exit_code, 0, "a file-size breach must not look like success");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn limits_are_optional() {
+        let out = run("sh", &args(&["-c", "echo fine"]), ExecOptions::default()).unwrap();
+        assert_eq!(out.exit_code, 0);
+        assert_eq!(out.stdout.trim(), "fine");
     }
 
     #[test]

@@ -115,11 +115,11 @@ styles again.
 
 ```
 cargo test --offline --workspace
-  72 unit tests           (13 modules)
+  79 unit tests           (13 modules)
    1 crash-safety test    (6 kills)
    2 integration tests    (local runtime, with and without a model)
    4 model-code tests     (accepted / not-JSON / rolled back / traversal)
-  = 79 tests, 0 failed, 0 warnings
+  = 86 tests, 0 failed, 0 warnings
 ```
 
 ---

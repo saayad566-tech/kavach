@@ -919,6 +919,8 @@ fn run_tests(project_dir: &Path) -> (bool, String) {
             cwd: Some(project_dir.to_string_lossy().to_string()),
             timeout_ms: 120_000,
             max_output_bytes: 64 * 1024,
+            cpu_seconds: Some(125),
+            max_file_bytes: Some(crate::commands::MAX_FILE_BYTES),
         },
     ) {
         Ok(out) if out.exit_code == 0 => (true, "node --test exited 0".to_string()),

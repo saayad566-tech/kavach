@@ -19,9 +19,11 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 79 tests, zero dependencies |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 86 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
 | Security scan of generated code | **Working** — high-severity findings fail verification |
+| Resource limits on generated code | **Working** — CPU-time and per-file write caps enforced by the kernel, so grandchildren are covered too |
+| Project store durability | **Working** — versioned index, previous copy kept, automatic recovery if the primary is corrupt |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
 | Model-authored application code | **Working, with a safety rule** — the model may add files; they are kept only if the project still passes its own tests, and rolled back otherwise |
 | Desktop UI (static HTML/JS, 20 commands) | **Working** — 13 render and accessibility checks |
@@ -56,7 +58,7 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 79 tests, no crates.io needed
+cargo test --offline --workspace          # 86 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)

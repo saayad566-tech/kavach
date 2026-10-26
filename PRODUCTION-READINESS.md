@@ -35,12 +35,12 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 3 | Installer exists | **Yes** | NSIS `.exe` and WiX `.msi`, checksums in `BUILD-EVIDENCE.md` |
 | 4 | Installer has been installed and exercised | **No** | No Windows machine here. `scripts/smoke-test-windows.ps1` automates 11 checks and prompts for 8 |
 | 5 | Binaries are code-signed | **Partly** | Free self-signed route implemented (`scripts/make-self-signed-cert.ps1`) for internal use; public distribution still needs a paid certificate, which is a business decision |
-| 6 | Generated code is sandboxed | **No** | Runs as a child process with an allow-list, timeout and path guard. No WASM or container isolation. Largest security gap |
+| 6 | Generated code is sandboxed | **Partly** | Allow-list, wall-clock timeout, process-group kill, **kernel-enforced CPU-time and per-file-write limits** (applied in `pre_exec`, so grandchildren are covered), and a path guard. Still no WASM or container isolation — that remains the largest gap, but a runaway build can no longer burn the CPU indefinitely or fill the disk |
 | 7 | Secrets are not committed or generated | **Yes** | `security.rs` scans every generated project; a high-severity finding fails verification |
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
-| 11 | Crash safety | **Yes** | Index written temp-then-rename; `tests/crash_safety.rs` SIGKILLs the writer six times and asserts the index stays coherent |
+| 11 | Crash safety | **Yes** | Index written temp-then-rename, the previous copy is kept as `index.tsv.bak`, a corrupt primary falls back to it automatically, and the format carries a version header. `tests/crash_safety.rs` SIGKILLs the writer six times and asserts coherence |
 | 12 | Upgrade path | **No** | No updater configured. Tauri's updater keys are free (ed25519), so this is work, not cost |
 | 13 | Documentation for operators | **Yes** | `WINDOWS-BUILD.md`, `BUILD-EVIDENCE.md`, `CI-EVIDENCE.md`, `README.md`, this file |
 | 14 | Licence compliance for bundled weights | **N/A yet** | No weights are bundled or downloaded by the host; the licence gate exists and is tested for when they are |
@@ -49,6 +49,24 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 ---
 
 ## What changed in this pass
+
+### Resource limits on generated code
+
+Every command a generated project runs now gets two kernel-enforced limits, set in
+`pre_exec` so they apply to the whole process tree: a CPU-time cap slightly above the
+wall-clock budget, and a per-file write cap of 512 MiB. The first stops a runaway loop even if
+the poll loop is delayed; the second stops a build filling the disk. Both are tested — a
+`while :; do :; done` loop is killed in about a second, and a 5 MB write is refused at 4 KiB.
+
+This is not a sandbox. It is containment of the two failure modes that actually destroy a
+user's machine, and it is honest about the difference.
+
+### The store can lose a file without losing your work
+
+The index now carries a version header, keeps the previous good copy as `index.tsv.bak`, and
+falls back to it when the primary is unreadable. A file written by an earlier version still
+loads. Tested by corrupting the primary and asserting the projects come back.
+
 
 ### Local inference is now implemented, tested, and honestly bounded
 

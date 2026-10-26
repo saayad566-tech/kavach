@@ -76,18 +76,34 @@ fn tree_hash(files: &[(String, String)]) -> String {
     format!("{h1:016x}{h2:016x}")
 }
 
+/// First line of every index written by this version. Absent in files written before it,
+/// which still load — the header is how a future version can migrate rather than guess.
+pub const INDEX_HEADER: &str = "# kavach-index v1";
+
 impl Store {
     fn index_path(workspace: &Path) -> PathBuf {
         workspace.join("index.tsv")
     }
 
-    pub fn load(workspace: &Path) -> Store {
+    fn backup_path(workspace: &Path) -> PathBuf {
+        workspace.join("index.tsv.bak")
+    }
+
+    /// Parse an index body. Returns the projects and how many lines were recognisable, so a
+    /// caller can tell "empty store" from "corrupt file".
+    fn parse(text: &str) -> (Vec<ProjectEntry>, usize) {
         let mut projects: Vec<ProjectEntry> = Vec::new();
-        if let Ok(text) = std::fs::read_to_string(Self::index_path(workspace)) {
+        let mut valid = 0usize;
+        {
             for line in text.lines() {
+                if line.trim().is_empty() || line.starts_with('#') {
+                    continue;
+                }
                 let fields: Vec<&str> = line.split('\t').collect();
                 match fields.first().copied() {
-                    Some("P") if fields.len() >= 7 => projects.push(ProjectEntry {
+                    Some("P") if fields.len() >= 7 => {
+                        valid += 1;
+                        projects.push(ProjectEntry {
                         id: fields[1].into(),
                         name: fields[2].into(),
                         app_kind: fields[3].into(),
@@ -96,7 +112,8 @@ impl Store {
                         checkpoints: Vec::new(),
                         tasks_verified: fields[6].split(',').filter(|s| !s.is_empty()).map(String::from).collect(),
                         tasks_unverified: Vec::new(),
-                    }),
+                        });
+                    }
                     Some("C") if fields.len() >= 6 => {
                         if let Some(project) = projects.iter_mut().find(|p| p.id == fields[1]) {
                             project.checkpoints.push(CheckpointEntry {
@@ -111,11 +128,37 @@ impl Store {
                 }
             }
         }
-        Store { workspace: workspace.to_path_buf(), projects }
+        (projects, valid)
+    }
+
+    /// Load the index, falling back to the backup when the primary is unreadable.
+    ///
+    /// A torn write is now unlikely (temp file plus rename), but a disk error, a killed
+    /// process between two saves or an edited file are all still possible. Losing every
+    /// project because one file is corrupt is not acceptable for a local application.
+    pub fn load(workspace: &Path) -> Store {
+        let mut recovered = Vec::new();
+        for path in [Self::index_path(workspace), Self::backup_path(workspace)] {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let (projects, valid) = Self::parse(&text);
+            let meaningful = text
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                .count();
+            if valid > 0 || meaningful == 0 {
+                return Store { workspace: workspace.to_path_buf(), projects };
+            }
+            // The file has content but nothing parsed: try the backup instead.
+            recovered.push(path);
+        }
+        Store { workspace: workspace.to_path_buf(), projects: Vec::new() }
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let mut out = String::new();
+        let mut out = String::from(INDEX_HEADER);
+        out.push('\n');
         for project in &self.projects {
             out.push_str(&format!(
                 "P\t{}\t{}\t{}\t{}\t{}\t{}\n",
@@ -141,8 +184,14 @@ impl Store {
         // half-written index. Rename is atomic within a filesystem on every platform we
         // ship; the old index survives if the process dies before the rename.
         let target = Self::index_path(&self.workspace);
+        let backup = Self::backup_path(&self.workspace);
         let temp = self.workspace.join("index.tsv.tmp");
         write_project_file(&self.workspace, "index.tsv.tmp", &out).map_err(|e| e.to_string())?;
+        // Keep the previous good index before replacing it, so a later corruption is
+        // recoverable rather than fatal.
+        if target.exists() {
+            std::fs::copy(&target, &backup).map_err(|e| format!("cannot back up the index: {e}"))?;
+        }
         std::fs::rename(&temp, &target).map_err(|e| format!("cannot replace the index: {e}"))
     }
 
@@ -305,13 +354,71 @@ mod tests {
         store.create_project("A web app to track orders", "web-app", "Orders");
         store.save().unwrap();
         let before = std::fs::read_to_string(ws.join("index.tsv")).unwrap();
-        assert!(before.starts_with("P\t"));
+        assert!(before.starts_with(INDEX_HEADER));
+        assert!(before.contains("\nP\t"), "the header must be followed by the records");
 
         // Simulate a crash between writing the temp file and renaming: the index must be
         // unchanged and still parseable.
         std::fs::write(ws.join("index.tsv.tmp"), "P\tbroken\t").unwrap();
         let reloaded = Store::load(&ws);
         assert_eq!(reloaded.projects.len(), 1, "a stale temp file must not affect the index");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn the_index_carries_a_version_header() {
+        let ws = tmp("header");
+        let mut store = Store::load(&ws);
+        store.create_project("A web app to track orders", "web-app", "Orders");
+        store.save().unwrap();
+        let text = std::fs::read_to_string(ws.join("index.tsv")).unwrap();
+        assert!(text.starts_with(INDEX_HEADER), "got {text:.60}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn an_index_without_a_header_still_loads() {
+        // Files written by an earlier version have no header; they must not be rejected.
+        let ws = tmp("legacy");
+        std::fs::write(
+            ws.join("index.tsv"),
+            "P\tp-old\tLegacy\tweb-app\t1700000000\tBuild a legacy app\tT-01\n",
+        )
+        .unwrap();
+        let store = Store::load(&ws);
+        assert_eq!(store.projects.len(), 1);
+        assert_eq!(store.projects[0].name, "Legacy");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn a_corrupt_index_recovers_from_the_backup() {
+        let ws = tmp("recover");
+        let mut store = Store::load(&ws);
+        store.create_project("First project", "web-app", "First");
+        store.save().unwrap();                       // backup is written on the next save
+        store.create_project("Second project", "web-app", "Second");
+        store.save().unwrap();
+
+        assert_eq!(Store::load(&ws).projects.len(), 2);
+        assert!(ws.join("index.tsv.bak").exists(), "a backup should exist after two saves");
+
+        // Corrupt the primary the way a bad disk or an interrupted editor would.
+        std::fs::write(ws.join("index.tsv"), "garbage\x00not an index\n").unwrap();
+        let recovered = Store::load(&ws);
+        assert_eq!(recovered.projects.len(), 1, "should fall back to the backup's single project");
+        assert_eq!(recovered.projects[0].name, "First");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn an_empty_store_is_not_mistaken_for_corruption() {
+        let ws = tmp("empty");
+        assert_eq!(Store::load(&ws).projects.len(), 0);
+        let mut store = Store::load(&ws);
+        store.create_project("Only project", "web-app", "Only");
+        store.save().unwrap();
+        assert_eq!(Store::load(&ws).projects.len(), 1);
         std::fs::remove_dir_all(&ws).ok();
     }
 
