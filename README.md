@@ -11,11 +11,11 @@ cloud fallback.
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 70 tests, zero dependencies |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 79 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
 | Security scan of generated code | **Working** — high-severity findings fail verification |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
-| Model-authored application code | **Not implemented** — the code is the deterministic scaffold; a larger model is required |
+| Model-authored application code | **Working, with a safety rule** — the model may add files; they are kept only if the project still passes its own tests, and rolled back otherwise |
 | Desktop UI (static HTML/JS, 20 commands) | **Working** — 13 render and accessibility checks |
 | Export to a plain source tree | **Working** |
 | Tauri shell compiles | **Proven on Windows** — run 40316051982 |
@@ -48,7 +48,7 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 70 tests, no crates.io needed
+cargo test --offline --workspace          # 79 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)
@@ -72,7 +72,9 @@ npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis
 2. **Understand** — the prompt becomes app kind, entities, features with acceptance criteria,
    assumptions, and a dependency-ordered plan.
 3. **Build** — a complete, dependency-free Node application: JSON-backed store with
-   validation, HTTP server, browser UI, and a real test suite.
+   validation, HTTP server, browser UI, and a real test suite. If a local model is running it
+   also writes the project notes, and may contribute code that is accepted only when the
+   project's tests still pass.
 4. **Verify** — `node --test` runs inside the generated project; the exit code is the evidence.
    A task is verified only if a command produced evidence for it.
 5. **Checkpoint** — the tree is snapshotted before the build and can be restored exactly.

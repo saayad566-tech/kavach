@@ -69,7 +69,8 @@ styles again.
 | 4 | Medium | Three `.lock().unwrap()` calls in `exec.rs` | A poisoned mutex would panic the command instead of returning an error | **Fixed** — `unwrap_or_else(\|p\| p.into_inner())` |
 | 5 | Medium | CSP granted `'unsafe-inline'` for styles the UI never uses | Wider policy than necessary, with no benefit | **Fixed** — removed, with a checker rule coupling CSP to actual UI behaviour |
 | 6 | Medium | The private-key rule tested the whole file instead of the line, so it fired once per line | One finding became N findings; a scanner that over-reports gets ignored | **Fixed** (found earlier this session, verified here) |
-| 7 | — | **Suspicion that turned out wrong:** the entity extractor looked like it could loop forever when a phrase ends immediately after a trigger word | — | **Not a bug** — each iteration advances by at least the trigger length, so the search string strictly shortens. Verified by tracing, and the existing extraction tests cover the case |
+| 7 | Medium | `verify-ui.mjs` could pass by matching the text of the injected stub script instead of rendered output | A check that can pass without the app doing anything is worse than no check | **Fixed** — scripts are stripped from the DOM before assertions, and the page is driven to actually build |
+| 8 | — | **Suspicion that turned out wrong:** the entity extractor looked like it could loop forever when a phrase ends immediately after a trigger word | — | **Not a bug** — each iteration advances by at least the trigger length, so the search string strictly shortens. Verified by tracing, and the existing extraction tests cover the case |
 
 ### Defect classes that were checked and found clean
 
@@ -110,14 +111,15 @@ styles again.
 - Three defect fixes with regression tests, one CSP tightening with a permanent rule, and one
   research finding recorded rather than silently applied.
 
-## 6. Test totals after the audit
+## 6. Test totals
 
 ```
 cargo test --offline --workspace
-  67 unit tests           (13 modules)
+  72 unit tests           (13 modules)
    1 crash-safety test    (6 kills)
    2 integration tests    (local runtime, with and without a model)
-  = 70 tests, 0 failed, 0 warnings
+   4 model-code tests     (accepted / not-JSON / rolled back / traversal)
+  = 79 tests, 0 failed, 0 warnings
 ```
 
 ---

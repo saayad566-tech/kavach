@@ -200,6 +200,14 @@ function renderReport(report) {
       return tr;
     }),
   );
+  const modelFiles = report.modelFiles || [];
+  const modelLine = el('model-files');
+  if (modelLine) {
+    modelLine.textContent = modelFiles.length
+      ? `Model-authored code accepted: ${modelFiles.join(', ')}`
+      : 'No model-authored code in this build.';
+  }
+
   const security = el('security');
   security.textContent = `${report.securitySummary} — ${report.securityPassed ? 'passed' : 'FAILED'}`;
   security.className = report.securityPassed ? 'muted' : 'error';

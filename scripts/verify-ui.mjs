@@ -51,6 +51,7 @@ window.__TAURI__ = {
           tasksVerified: ['T-01','T-02','T-03','T-04','T-05','T-06'], tasksUnverified: ['T-07'],
           limitations: ['Application code is the deterministic scaffold'],
           runtime: 'ollama (qwen2.5-coder:7b)',
+          modelFiles: ['src/summarise.js'],
           securitySummary: '8 file(s) scanned, no findings', securityPassed: true,
           checkpointId: 'cp-1' } };
       case 'list_checkpoints':
@@ -67,7 +68,14 @@ const server = createServer(async (req, res) => {
   if (path === '/' || path === '/index.html') {
     const html = await readFile(join(UI, 'index.html'), 'utf8');
     // Inject the stub before the app script so the UI sees an IPC on first run.
-    const withStub = html.replace('<script src="app.js"></script>', `<script>${STUB}</script><script src="app.js"></script>`);
+    const driver = `<script>window.addEventListener('load', () => setTimeout(() => {
+      const build = document.getElementById('build');
+      if (build) build.click();
+    }, 250));</script>`;
+    const withStub = html.replace(
+      '<script src="app.js"></script>',
+      `<script>${STUB}</script><script src="app.js"></script>${driver}`,
+    );
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(withStub);
     return;
@@ -86,7 +94,7 @@ const port = server.address().port;
 
 function chromium(args, url) {
   return new Promise((resolve) => {
-    const child = spawn('chromium', ['--headless=new', '--disable-gpu', '--no-sandbox', '--virtual-time-budget=8000', ...args, url]);
+    const child = spawn('chromium', ['--headless=new', '--disable-gpu', '--no-sandbox', '--virtual-time-budget=12000', ...args, url]);
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => (out += d));
@@ -95,7 +103,11 @@ function chromium(args, url) {
   });
 }
 
-const { out: dom } = await chromium(['--dump-dom'], `http://127.0.0.1:${port}/`);
+const { out: rawDom } = await chromium(['--dump-dom'], `http://127.0.0.1:${port}/`);
+// Assertions run against rendered markup only. Without this, a check can pass by matching
+// the text of the injected stub script instead of anything the app actually produced —
+// which is exactly the false positive this check had.
+const dom = rawDom.replace(/<script[\s\S]*?<\/script>/g, '');
 
 const checks = {
   'page rendered': dom.includes('Kavach') && dom.length > 1500,
@@ -105,6 +117,7 @@ const checks = {
   'projects list rendered': /Invoice app/.test(dom),
   'runtime status is reported': /Local model connected: qwen2\.5-coder:7b/.test(dom),
   'security result is shown': /8 file\(s\) scanned, no findings/.test(dom),
+  'model contribution is shown': /Model-authored code accepted: src\/summarise\.js/.test(dom),
   // The element always exists; what matters is that it carries no message.
   // Accessibility checks that can be made from the rendered DOM.
   'page declares a language': /<html[^>]+lang="en"/.test(dom),

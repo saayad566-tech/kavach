@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::exec::{run, ExecOptions, EXIT_TIMEOUT};
 use crate::json::Json;
-use crate::path::write_project_file;
+use crate::path::{delete_project_file, list_project_files, write_project_file};
 use crate::runtime::{self, Runtime};
 use crate::security;
 
@@ -64,6 +64,8 @@ pub struct DeliveryReport {
     pub duration_ms: u64,
     /// Which local runtime contributed, if any.
     pub runtime: Option<String>,
+    /// Files the model authored and that survived verification.
+    pub model_files: Vec<String>,
     /// Result of the security scan, which gates delivery.
     pub security_summary: String,
     pub security_passed: bool,
@@ -95,6 +97,7 @@ impl DeliveryReport {
             .strings("tasksUnverified", &unverified)
             .strings("limitations", &self.limitations)
             .uint("durationMs", self.duration_ms)
+            .strings("modelFiles", &self.model_files)
             .raw("runtime", &match &self.runtime {
                 Some(name) => format!("\"{}\"", crate::json::escape(name)),
                 None => "null".to_string(),
@@ -795,6 +798,136 @@ pub fn guard(files: &[GeneratedFile]) -> Vec<String> {
     problems
 }
 
+/// A file the model proposed to add.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProposedFile {
+    pub path: String,
+    pub content: String,
+}
+
+pub const MAX_MODEL_FILES: usize = 6;
+pub const MAX_MODEL_FILE_BYTES: usize = 64 * 1024;
+const ALLOWED_MODEL_EXTENSIONS: &[&str] = &["js", "mjs", "md", "css", "html", "json", "txt"];
+
+/// Parse and validate a model's file manifest.
+///
+/// The model is untrusted input. Everything it proposes is checked here — shape, path,
+/// size, extension, placeholders, secrets — and rejected as a whole if any file fails,
+/// so a partially-applied proposal can never reach the disk.
+pub fn parse_manifest(text: &str, existing: &[String]) -> Result<Vec<ProposedFile>, String> {
+    // Models wrap JSON in prose or code fences often enough that requiring a bare object
+    // would reject otherwise usable output. Take the outermost braces.
+    let start = text.find('{').ok_or("no JSON object found in the model output")?;
+    let end = text.rfind('}').ok_or("the model output has no closing brace")?;
+    if end <= start {
+        return Err("the model output has no complete JSON object".into());
+    }
+    let json = crate::runtime::parse_json(&text[start..=end])
+        .map_err(|e| format!("the model output is not valid JSON: {e}"))?;
+
+    let files = match json.get("files") {
+        Some(crate::runtime::Value::Array(items)) => items,
+        Some(_) => return Err("\"files\" is not an array".into()),
+        None => return Err("the model output has no \"files\" array".into()),
+    };
+    if files.is_empty() {
+        return Err("the model proposed no files".into());
+    }
+    if files.len() > MAX_MODEL_FILES {
+        return Err(format!("the model proposed {} files; at most {MAX_MODEL_FILES} are accepted", files.len()));
+    }
+
+    let mut out: Vec<ProposedFile> = Vec::new();
+    for (index, entry) in files.iter().enumerate() {
+        let path = entry
+            .path_str("path")
+            .ok_or_else(|| format!("proposed file {index} has no string \"path\""))?
+            .trim()
+            .to_string();
+        let content = entry
+            .path_str("content")
+            .ok_or_else(|| format!("proposed file {index} ({path}) has no string \"content\""))?
+            .to_string();
+
+        if crate::path::safe_join(Path::new("."), &path).is_err() {
+            return Err(format!("proposed path {path:?} is not a safe relative path"));
+        }
+        if path.starts_with('.') {
+            return Err(format!("proposed path {path:?} is hidden; Kavach does not write dotfiles from a model"));
+        }
+        let extension = Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        if !ALLOWED_MODEL_EXTENSIONS.contains(&extension.as_str()) {
+            return Err(format!(
+                "proposed path {path:?} has extension {extension:?}; allowed: {}",
+                ALLOWED_MODEL_EXTENSIONS.join(", ")
+            ));
+        }
+        if content.trim().is_empty() {
+            return Err(format!("proposed file {path:?} is empty"));
+        }
+        if content.len() > MAX_MODEL_FILE_BYTES {
+            return Err(format!("proposed file {path:?} is {} bytes; the limit is {MAX_MODEL_FILE_BYTES}", content.len()));
+        }
+        // The model may add files, never replace what Kavach generated: a replaced
+        // scaffold file would make a rollback ambiguous and the tests meaningless.
+        if existing.iter().any(|e| e == &path) {
+            return Err(format!("proposed path {path:?} already exists; the model may only add new files"));
+        }
+        if out.iter().any(|f| f.path == path) {
+            return Err(format!("proposed path {path:?} appears twice"));
+        }
+
+        let candidate = GeneratedFile { path: path.clone(), content: content.clone(), origin: "model" };
+        let violations = guard(std::slice::from_ref(&candidate));
+        if !violations.is_empty() {
+            return Err(format!("proposed file {path:?} was rejected: {}", violations.join("; ")));
+        }
+        if !crate::security::scan_content(&path, &content).iter().all(|f| f.severity != crate::security::Severity::High) {
+            return Err(format!("proposed file {path:?} contains a high-severity secret"));
+        }
+
+        out.push(ProposedFile { path, content });
+    }
+    Ok(out)
+}
+
+/// Ask the model for code, bounded to a small, reviewable addition.
+fn request_manifest(runtime: &Runtime, reqs: &Requirements, existing: &[String]) -> Result<Vec<ProposedFile>, String> {
+    let prompt = format!(
+        "You are adding code to a small Node.js application with no dependencies.\n\
+         Reply with JSON only. No prose, no code fences.\n\
+         Shape: {{\"files\":[{{\"path\":\"src/example.js\",\"content\":\"...\"}}]}}\n\
+         Rules: at most 2 files; paths relative to the project root; extensions .js or .md;\n\
+         add new files only, never replace existing ones; no placeholders, TODOs or secrets.\n\n\
+         The application: {}\nEntities: {}\n\n\
+         Add one small, self-contained ES module under src/ that gives this app a useful pure\n\
+         helper (for example formatting, validation or summarising), exporting plain functions.\n\
+         Do not import anything.",
+        reqs.summary,
+        reqs.entities.join(", ")
+    );
+    let text = runtime::generate(runtime, &prompt, 900).map_err(|e| e.to_string())?;
+    parse_manifest(&text, existing)
+}
+
+/// Run the generated project's own test command.
+fn run_tests(project_dir: &Path) -> (bool, String) {
+    match run(
+        "node",
+        &["--test".to_string()],
+        ExecOptions {
+            cwd: Some(project_dir.to_string_lossy().to_string()),
+            timeout_ms: 120_000,
+            max_output_bytes: 64 * 1024,
+        },
+    ) {
+        Ok(out) if out.exit_code == 0 => (true, "node --test exited 0".to_string()),
+        Ok(out) if out.timed_out => (false, format!("node --test timed out (exit {EXIT_TIMEOUT})")),
+        Ok(out) => (false, format!("node --test exited {}: {}", out.exit_code, out.stderr.lines().next().unwrap_or(""))),
+        Err(e) => (false, format!("cannot execute tests: {e}")),
+    }
+}
+
 /// Run the whole pipeline against a project directory.
 pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> DeliveryReport {
     build_project_with(project_id, project_dir, prompt, None)
@@ -902,34 +1035,62 @@ pub fn build_project_with(
         },
     });
 
+    // Model-authored code. Accepted only if the project still passes its own tests, and
+    // rolled back if it does not — a model that breaks the build must not ship broken code.
+    let mut model_files: Vec<String> = Vec::new();
+    let model_code_detail = match runtime {
+        None => "no local model server was reachable".to_string(),
+        Some(rt) => {
+            let existing = list_project_files(project_dir);
+            match request_manifest(rt, &reqs, &existing) {
+                Err(reason) => format!("model code rejected: {reason}"),
+                Ok(proposed) => {
+                    let mut written: Vec<String> = Vec::new();
+                    let mut failure = None;
+                    for file in &proposed {
+                        match write_project_file(project_dir, &file.path, &file.content) {
+                            Ok(_) => written.push(file.path.clone()),
+                            Err(e) => {
+                                failure = Some(format!("{}: {e}", file.path));
+                                break;
+                            }
+                        }
+                    }
+                    match failure {
+                        Some(err) => {
+                            for path in &written {
+                                let _ = delete_project_file(project_dir, path);
+                            }
+                            format!("model code discarded, write failed: {err}")
+                        }
+                        None => {
+                            let (passes, detail) = run_tests(project_dir);
+                            if passes {
+                                model_files = written.clone();
+                                format!("{} model file(s) accepted; the project's tests still pass", written.len())
+                            } else {
+                                for path in &written {
+                                    let _ = delete_project_file(project_dir, path);
+                                }
+                                let (scaffold_ok, _) = run_tests(project_dir);
+                                format!(
+                                    "model code rolled back ({detail}){}",
+                                    if scaffold_ok { "; the scaffold alone passes" } else { "; the scaffold alone also fails" }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    stages.push(Stage { stage: "model-code", ok: true, detail: model_code_detail });
+
     // Security scan: this is the evidence the "Run security checks" task never had.
     let scan = security::scan_project(project_dir);
-    stages.push(Stage {
-        stage: "security",
-        ok: scan.passes(),
-        detail: scan.summary(),
-    });
+    stages.push(Stage { stage: "security", ok: scan.passes(), detail: scan.summary() });
 
-    // Verify by actually running the generated project's own tests.
-    let verify = run(
-        "node",
-        &["--test".to_string()],
-        ExecOptions {
-            cwd: Some(project_dir.to_string_lossy().to_string()),
-            timeout_ms: 120_000,
-            max_output_bytes: 64 * 1024,
-        },
-    );
-
-    let (tests_ok, tests_detail) = match &verify {
-        Ok(out) if out.exit_code == 0 => (true, "node --test exited 0".to_string()),
-        Ok(out) if out.timed_out => (false, format!("node --test timed out (exit {EXIT_TIMEOUT})")),
-        Ok(out) => (
-            false,
-            format!("node --test exited {}: {}", out.exit_code, out.stderr.lines().next().unwrap_or("")),
-        ),
-        Err(e) => (false, format!("cannot execute tests: {e}")),
-    };
+    let (tests_ok, tests_detail) = run_tests(project_dir);
     let verify_ok = tests_ok && scan.passes();
     let verify_detail = if tests_ok && !scan.passes() {
         format!("tests passed but the security scan found {} high-severity issue(s)", scan.count(security::Severity::High))
@@ -974,7 +1135,14 @@ pub fn build_project_with(
         ),
         (Some(_), true) => limitations.insert(
             0,
-            "Application code is the deterministic scaffold; the local model contributed the notes only.".to_string(),
+            if model_files.is_empty() {
+                "Application code is the deterministic scaffold; the local model contributed the notes only.".to_string()
+            } else {
+                format!(
+                    "Application code is the deterministic scaffold plus {} model-authored file(s) that passed the project's tests.",
+                    model_files.len()
+                )
+            },
         ),
     }
     if !verify_ok {
@@ -1000,6 +1168,7 @@ pub fn build_project_with(
         limitations,
         duration_ms: started.elapsed().as_millis() as u64,
         runtime: runtime_label,
+        model_files: model_files.clone(),
         security_summary: scan.summary(),
         security_passed: scan.passes(),
     }
@@ -1055,6 +1224,62 @@ mod tests {
             assert!(paths.contains(&required), "missing {required}");
         }
         assert!(guard(&files).is_empty(), "guard found {:?}", guard(&files));
+    }
+
+    #[test]
+    fn manifest_accepts_a_well_formed_proposal() {
+        let text = r#"{"files":[{"path":"src/helper.js","content":"export const add = (a, b) => a + b;\n"}]}"#;
+        let files = parse_manifest(text, &[]).expect("should accept");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "src/helper.js");
+    }
+
+    #[test]
+    fn manifest_tolerates_prose_around_the_json() {
+        let text = "Sure! Here you go:\n```json\n{\"files\":[{\"path\":\"a.md\",\"content\":\"# Hi\"}]}\n```\nHope that helps.";
+        assert_eq!(parse_manifest(text, &[]).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn manifest_rejects_every_unsafe_shape() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("no json at all", "I cannot help with that."),
+            ("empty files", r#"{"files":[]}"#),
+            ("files not an array", r#"{"files":"nope"}"#),
+            ("no files key", r#"{"other":1}"#),
+            ("missing path", r#"{"files":[{"content":"x"}]}"#),
+            ("missing content", r#"{"files":[{"path":"a.js"}]}"#),
+            ("absolute path", r#"{"files":[{"path":"/etc/passwd","content":"x"}]}"#),
+            ("traversal", r#"{"files":[{"path":"../out.js","content":"x"}]}"#),
+            ("hidden file", r#"{"files":[{"path":".env","content":"x"}]}"#),
+            ("bad extension", r#"{"files":[{"path":"run.sh","content":"x"}]}"#),
+            ("empty content", r#"{"files":[{"path":"a.js","content":"   "}]}"#),
+            ("duplicate path", r#"{"files":[{"path":"a.js","content":"x"},{"path":"a.js","content":"y"}]}"#),
+            ("too many files", r#"{"files":[{"path":"a.js","content":"x"},{"path":"b.js","content":"x"},{"path":"c.js","content":"x"},{"path":"d.js","content":"x"},{"path":"e.js","content":"x"},{"path":"f.js","content":"x"},{"path":"g.js","content":"x"}]}"#),
+        ];
+        for (label, text) in cases {
+            assert!(parse_manifest(text, &[]).is_err(), "should reject: {label}");
+        }
+    }
+
+    #[test]
+    fn manifest_rejects_overwriting_a_generated_file() {
+        let existing = vec!["src/store.js".to_string()];
+        let text = r#"{"files":[{"path":"src/store.js","content":"export const x = 1;"}]}"#;
+        let err = parse_manifest(text, &existing).unwrap_err();
+        assert!(err.contains("already exists"), "{err}");
+    }
+
+    #[test]
+    fn manifest_rejects_placeholders_and_secrets() {
+        let todo = r#"{"files":[{"path":"a.js","content":"// TODO: finish this"}]}"#;
+        assert!(parse_manifest(todo, &[]).unwrap_err().contains("rejected"));
+
+        // The content guard catches this before the security scanner does; either way it
+        // must be rejected, and the message must say why.
+        let secret = r#"{"files":[{"path":"a.js","content":"-----BEGIN RSA PRIVATE KEY-----"}]}"#;
+        let err = parse_manifest(secret, &[]).unwrap_err();
+        assert!(err.contains("secret"), "rejection should mention the secret: {err}");
     }
 
     #[test]

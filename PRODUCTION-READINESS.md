@@ -32,7 +32,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 6 | Generated code is sandboxed | **No** | Runs as a child process with an allow-list, timeout and path guard. No WASM or container isolation. Largest security gap |
 | 7 | Secrets are not committed or generated | **Yes** | `security.rs` scans every generated project; a high-severity finding fails verification |
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
-| 9 | Local model support | **Partly** | Discovery, connection, generation and error handling are implemented and tested against real sockets. The model writes project notes; it does not write application code |
+| 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
 | 11 | Crash safety | **Yes** | Index written temp-then-rename; `tests/crash_safety.rs` SIGKILLs the writer six times and asserts the index stays coherent |
 | 12 | Upgrade path | **No** | No updater configured; `createUpdaterArtifacts` is off |
@@ -56,10 +56,12 @@ The headline feature was unimplemented. It is now real:
 - Discovery never starts a server. If nothing is listening, that is what the app reports.
 - Responses are parsed by a hand-written JSON parser (nested objects, arrays, escapes,
   `\u` sequences), capped at 4 MiB, with chunked encoding rejected rather than mis-parsed.
-- **The model writes the project notes, not the application code.** A 7B model can write four
-  good bullet points; emitting a valid multi-file manifest needs a larger model, and
-  pretending otherwise would produce a builder that fails unpredictably. The UI states exactly
-  which of the two happened.
+- **The model writes notes, and may contribute code — under a rule.** A proposal is parsed,
+  validated (safe relative path, allowed extension, no placeholders, no secrets, no overwriting
+  generated files, size and count limits) and written. Then the project's own `node --test`
+  runs. If it passes, the model's files stay; if it fails, they are deleted, the tests are
+  re-run, and the delivery reports the rollback. A model that breaks the build cannot ship
+  broken code — which is the only way this feature is safe with a small model.
 
 Tested against real sockets, not mocks. Unit tests cover Ollama's `/api/generate`, OpenAI's
 `/v1/chat/completions`, an HTTP 500, a chunked response, malformed JSON, and discovery finding
