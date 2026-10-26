@@ -7,7 +7,7 @@
 const invoke = window.__TAURI__?.invoke;
 
 const el = (id) => document.getElementById(id);
-const state = { workspace: null, projectId: null };
+const state = { workspace: null, projectId: null, runtime: null };
 
 function setBadge(text, tone) {
   const badge = el('host-badge');
@@ -55,6 +55,7 @@ async function boot() {
     state.workspace = workspace.path;
     setBadge('desktop shell · local only', 'ok');
     await loadDevice();
+    await loadRuntime();
     await loadProjects();
   } catch (err) {
     setBadge('shell error', 'bad');
@@ -95,6 +96,31 @@ async function loadDevice() {
     );
   } catch (err) {
     el('device-sub').textContent = `probe failed: ${err.message}`;
+  }
+}
+
+// Local model discovery. Absence is reported plainly, never hidden behind a spinner.
+async function loadRuntime() {
+  const notice = el('inference-notice');
+  try {
+    const found = await call('probe_runtime');
+    state.runtime = found.available ? found : null;
+    if (found.available) {
+      notice.className = 'notice notice--ok';
+      notice.innerHTML =
+        `<strong>Local model connected: ${found.model}</strong> (${found.kind} on ${found.host}:${found.port}). ` +
+        'It writes the project notes. The application code is still Kavach\'s deterministic scaffold, ' +
+        'because model-authored code generation needs a larger model than this milestone targets.';
+    } else {
+      notice.className = 'notice';
+      notice.innerHTML =
+        '<strong>No local model is running.</strong> The application code comes from Kavach\'s ' +
+        'deterministic scaffold, so it is the same every time. Start Ollama or a llama.cpp server ' +
+        'and build again to have a model write the project notes.';
+    }
+  } catch (err) {
+    notice.className = 'notice';
+    notice.textContent = `Could not check for a local model: ${err.message}`;
   }
 }
 
@@ -140,8 +166,10 @@ async function build() {
       workspace: state.workspace,
       projectId: project.id,
       prompt: el('prompt').value,
+      useLocalModel: Boolean(state.runtime),
     });
     renderReport(result.report);
+    el('export').disabled = false;
     await loadProjects();
     await loadCheckpoints(project.id);
   } catch (err) {
@@ -172,6 +200,10 @@ function renderReport(report) {
       return tr;
     }),
   );
+  const security = el('security');
+  security.textContent = `${report.securitySummary} — ${report.securityPassed ? 'passed' : 'FAILED'}`;
+  security.className = report.securityPassed ? 'muted' : 'error';
+
   el('limitations').replaceChildren(
     ...report.limitations.map((text) => {
       const li = document.createElement('li');
@@ -235,6 +267,27 @@ async function loadProjects() {
   }
 }
 
+async function exportProject() {
+  if (!state.projectId) return;
+  showError('');
+  const destination = window.prompt(
+    'Export to which folder? Give an absolute path outside the project.',
+    'C:\\Users\\Public\\kavach-export',
+  );
+  if (!destination) return;
+  try {
+    const result = await call('export_project', {
+      workspace: state.workspace,
+      projectId: state.projectId,
+      destination,
+    });
+    el('busy').textContent = `exported ${result.files} files (${result.bytes} bytes) to ${result.destination}`;
+  } catch (err) {
+    showError(`Export failed: ${err.message}`);
+  }
+}
+
 el('build').addEventListener('click', build);
+el('export').addEventListener('click', exportProject);
 el('preview-req').addEventListener('click', showRequirements);
 boot();

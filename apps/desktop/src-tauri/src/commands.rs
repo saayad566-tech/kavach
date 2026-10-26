@@ -92,8 +92,24 @@ pub fn create_project(workspace: String, prompt: String) -> String {
 }
 
 #[tauri::command]
-pub fn build_project(workspace: String, project_id: String, prompt: String) -> String {
-    host::build_project(&workspace, &project_id, &prompt)
+pub fn build_project(workspace: String, project_id: String, prompt: String, use_local_model: bool) -> String {
+    host::build_project(&workspace, &project_id, &prompt, use_local_model)
+}
+
+/// Is a model server running on this machine? Never starts one.
+#[tauri::command]
+pub fn probe_runtime() -> String {
+    host::probe_runtime()
+}
+
+#[tauri::command]
+pub fn security_scan(workspace: String, project_id: String) -> String {
+    host::security_scan(&workspace, &project_id)
+}
+
+#[tauri::command]
+pub fn export_project(workspace: String, project_id: String, destination: String) -> String {
+    host::export_project(&workspace, &project_id, &destination)
 }
 
 #[tauri::command]

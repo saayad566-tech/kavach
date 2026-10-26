@@ -11,15 +11,19 @@ cloud fallback.
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 39 tests, zero dependencies |
-| Builder pipeline (requirements → plan → scaffold → verify → report) | **Working** — generates a project that passes its own `node --test` |
-| Desktop UI (static HTML/JS, 18 commands) | **Working** in a stubbed-IPC render test |
-| Tauri shell compiles | **Not proven** — never through `rustc` with the Tauri macros |
-| Windows installer | **Not built** — no runner available (see `WINDOWS-BUILD.md` §5) |
-| Local model inference in the desktop app | **Not implemented** — the app says so on screen |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 66 tests, zero dependencies |
+| Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
+| Security scan of generated code | **Working** — high-severity findings fail verification |
+| Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
+| Model-authored application code | **Not implemented** — the code is the deterministic scaffold; a larger model is required |
+| Desktop UI (static HTML/JS, 20 commands) | **Working** — 13 render and accessibility checks |
+| Export to a plain source tree | **Working** |
+| Tauri shell compiles | **Proven on Windows** — run 40316051982 |
+| Windows installers | **Built, unsigned, not yet smoke-tested** — see `BUILD-EVIDENCE.md` |
+| Production readiness | **Technical preview** — see `PRODUCTION-READINESS.md` |
 
-Nothing in this repository is claimed to work unless a command in `scripts/verify-all.sh`
-proves it, and that script deliberately stops short of claiming the shell compiles.
+Nothing here is claimed to work unless a command in `scripts/verify-all.sh` proves it, and
+that script stops short of claiming the shell compiles — only a real build does that.
 
 ## Shape
 
@@ -44,10 +48,10 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 39 tests, no crates.io needed
+cargo test --offline --workspace          # 66 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
-node scripts/verify-ui.mjs                # renders the UI in headless Chromium (7 checks)
+node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)
 ```
 
 ## Build
@@ -82,6 +86,15 @@ npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis
 - File writes reject absolute paths, `..` traversal, and symlinks leading outside the project.
 - Model installation requires an accepted licence and a matching SHA-256, verified before and
   after the copy.
+
+## Documents
+
+| File | Purpose |
+|---|---|
+| `PRODUCTION-READINESS.md` | Criteria, honest status, and the path to shippable |
+| `WINDOWS-BUILD.md` | Reproducible build and signing procedure |
+| `BUILD-EVIDENCE.md` | The successful build: run, artefacts, checksums |
+| `CI-EVIDENCE.md` | What the CI runs showed, including the failures |
 
 ## Licence
 

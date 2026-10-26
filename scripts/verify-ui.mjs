@@ -34,6 +34,11 @@ window.__TAURI__ = {
                  assumptions: ['Data is stored locally in a JSON file'],
                  features: [{ id: 'FR-01', statement: 'CRUD for Invoice', acceptance: 'A invoice can be created' }],
                  plan: [{ id: 'T-01', title: 'Scaffold', acceptance: ['tree matches'], dependsOn: [] }] };
+      case 'probe_runtime':
+        return { ok: true, available: true, kind: 'ollama', host: '127.0.0.1', port: 11434,
+                 model: 'qwen2.5-coder:7b', models: ['qwen2.5-coder:7b'] };
+      case 'export_project':
+        return { ok: true, destination: 'C:/out', files: 8, bytes: 1234 };
       case 'create_project':
         return { ok: true, id: 'p-2', name: 'Invoice app', appKind: 'web-app', createdAt: '2' };
       case 'build_project':
@@ -43,8 +48,10 @@ window.__TAURI__ = {
                    { stage: 'verify', ok: true, detail: 'node --test exited 0' },
                    { stage: 'deliver', ok: true, detail: '5 tasks verified, 2 unverified' }],
           files: [{ path: 'src/store.js', origin: 'scaffold' }],
-          tasksVerified: ['T-01','T-02','T-03','T-04','T-05'], tasksUnverified: ['T-06','T-07'],
-          limitations: ['No local model is wired into the desktop shell yet'],
+          tasksVerified: ['T-01','T-02','T-03','T-04','T-05','T-06'], tasksUnverified: ['T-07'],
+          limitations: ['Application code is the deterministic scaffold'],
+          runtime: 'ollama (qwen2.5-coder:7b)',
+          securitySummary: '8 file(s) scanned, no findings', securityPassed: true,
           checkpointId: 'cp-1' } };
       case 'list_checkpoints':
         return { ok: true, checkpoints: [{ id: 'cp-1', label: 'before build', treeHash: 'abcdef0123456789', createdAt: '3' }] };
@@ -96,8 +103,18 @@ const checks = {
   'device panel is populated': /Test CPU/.test(dom) && /16\.0 GiB/.test(dom),
   'unmeasured items are listed': /never measured/.test(dom),
   'projects list rendered': /Invoice app/.test(dom),
-  'local inference is declared unimplemented': /Local inference is not implemented in this build/.test(dom),
+  'runtime status is reported': /Local model connected: qwen2\.5-coder:7b/.test(dom),
+  'security result is shown': /8 file\(s\) scanned, no findings/.test(dom),
   // The element always exists; what matters is that it carries no message.
+  // Accessibility checks that can be made from the rendered DOM.
+  'page declares a language': /<html[^>]+lang="en"/.test(dom),
+  'skip link present': /class="skip-link"[^>]*href="#main"/.test(dom),
+  'status region is announced': /role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/.test(dom),
+  'every input has a label': (() => {
+    const inputs = [...dom.matchAll(/<(input|textarea)\b[^>]*>/g)].map((m) => m[0]);
+    return inputs.every((tag) => /id="/.test(tag)) && (dom.match(/<label/g) || []).length >= inputs.length;
+  })(),
+  'focus styles defined': /:focus-visible/.test(await readFile(join(UI, 'styles.css'), 'utf8')),
   'no error banner': (() => {
     const match = dom.match(/<p id="error"[^>]*>([\s\S]*?)<\/p>/);
     return match !== null && match[1].trim() === '';

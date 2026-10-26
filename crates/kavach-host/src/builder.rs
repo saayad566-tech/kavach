@@ -10,6 +10,8 @@ use std::path::Path;
 use crate::exec::{run, ExecOptions, EXIT_TIMEOUT};
 use crate::json::Json;
 use crate::path::write_project_file;
+use crate::runtime::{self, Runtime};
+use crate::security;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
@@ -60,6 +62,11 @@ pub struct DeliveryReport {
     pub unverified: Vec<String>,
     pub limitations: Vec<String>,
     pub duration_ms: u64,
+    /// Which local runtime contributed, if any.
+    pub runtime: Option<String>,
+    /// Result of the security scan, which gates delivery.
+    pub security_summary: String,
+    pub security_passed: bool,
 }
 
 impl DeliveryReport {
@@ -88,6 +95,12 @@ impl DeliveryReport {
             .strings("tasksUnverified", &unverified)
             .strings("limitations", &self.limitations)
             .uint("durationMs", self.duration_ms)
+            .raw("runtime", &match &self.runtime {
+                Some(name) => format!("\"{}\"", crate::json::escape(name)),
+                None => "null".to_string(),
+            })
+            .str("securitySummary", &self.security_summary)
+            .bool("securityPassed", self.security_passed)
             .finish()
     }
 }
@@ -784,6 +797,36 @@ pub fn guard(files: &[GeneratedFile]) -> Vec<String> {
 
 /// Run the whole pipeline against a project directory.
 pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> DeliveryReport {
+    build_project_with(project_id, project_dir, prompt, None)
+}
+
+/// Ask a local model to write the project notes.
+///
+/// This is a genuine, bounded use of a small model: prose about the plan, not code. Code
+/// generation needs a model large enough to emit a valid manifest, which is a separate
+/// milestone; a note that a 3B model can write well is better than a manifest it cannot.
+fn model_notes(runtime: &Runtime, reqs: &Requirements, plan: &[Task]) -> Option<String> {
+    let prompt = format!(
+        "Write 4 short bullet points describing what this application does and how it is \
+         structured, for a README. No preamble, no markdown headings.\n\nApplication: {}\n\
+         Entities: {}\nTasks: {}",
+        reqs.summary,
+        reqs.entities.join(", "),
+        plan.iter().map(|t| t.title.clone()).collect::<Vec<_>>().join("; ")
+    );
+    match runtime::generate(runtime, &prompt, 220) {
+        Ok(text) if text.trim().len() >= 20 => Some(text.trim().to_string()),
+        _ => None,
+    }
+}
+
+/// Run the pipeline, optionally with a local model available.
+pub fn build_project_with(
+    project_id: &str,
+    project_dir: &Path,
+    prompt: &str,
+    runtime: Option<&Runtime>,
+) -> DeliveryReport {
     let started = std::time::Instant::now();
     let mut stages: Vec<Stage> = Vec::new();
 
@@ -807,7 +850,7 @@ pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> Deli
         detail: format!("{} dependency-ordered tasks", plan.len()),
     });
 
-    let files = scaffold(&reqs);
+    let mut files = scaffold(&reqs);
     let violations = guard(&files);
     let mut written = Vec::new();
     let mut write_failed = None;
@@ -820,14 +863,51 @@ pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> Deli
             }
         }
     }
+
+    // A local model, if one is running, writes the project notes. Its output is prose, so it
+    // is guarded like any other generated content before being written.
+    let mut runtime_label = None;
+    let mut model_note_written = false;
+    if let Some(rt) = runtime {
+        runtime_label = Some(format!("{} ({})", rt.kind.as_str(), rt.model));
+        if let Some(notes) = model_notes(rt, &reqs, &plan) {
+            let candidate = GeneratedFile {
+                path: "docs/MODEL-NOTES.md".into(),
+                content: format!("# Notes written by the local model\n\nModel: `{}`\n\n{}\n", rt.model, notes),
+                origin: "model",
+            };
+            if guard(std::slice::from_ref(&candidate)).is_empty()
+                && write_project_file(project_dir, &candidate.path, &candidate.content).is_ok()
+            {
+                files.push(candidate.clone());
+                written.push(candidate);
+                model_note_written = true;
+            }
+        }
+    }
+
     stages.push(Stage {
         stage: "design",
         ok: write_failed.is_none() && violations.is_empty(),
         detail: match (&write_failed, violations.is_empty()) {
             (Some(err), _) => format!("write failed: {err}"),
             (None, false) => format!("{} content violations", violations.len()),
-            (None, true) => format!("{} files written", written.len()),
+            (None, true) => {
+                if model_note_written {
+                    format!("{} files written, including model-authored notes", written.len())
+                } else {
+                    format!("{} files written", written.len())
+                }
+            }
         },
+    });
+
+    // Security scan: this is the evidence the "Run security checks" task never had.
+    let scan = security::scan_project(project_dir);
+    stages.push(Stage {
+        stage: "security",
+        ok: scan.passes(),
+        detail: scan.summary(),
     });
 
     // Verify by actually running the generated project's own tests.
@@ -841,16 +921,34 @@ pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> Deli
         },
     );
 
-    let (verify_ok, verify_detail) = match &verify {
+    let (tests_ok, tests_detail) = match &verify {
         Ok(out) if out.exit_code == 0 => (true, "node --test exited 0".to_string()),
-        Ok(out) if out.timed_out => (false, format!("node --test timed out (exit {})", EXIT_TIMEOUT)),
-        Ok(out) => (false, format!("node --test exited {}: {}", out.exit_code, out.stderr.lines().next().unwrap_or(""))),
+        Ok(out) if out.timed_out => (false, format!("node --test timed out (exit {EXIT_TIMEOUT})")),
+        Ok(out) => (
+            false,
+            format!("node --test exited {}: {}", out.exit_code, out.stderr.lines().next().unwrap_or("")),
+        ),
         Err(e) => (false, format!("cannot execute tests: {e}")),
+    };
+    let verify_ok = tests_ok && scan.passes();
+    let verify_detail = if tests_ok && !scan.passes() {
+        format!("tests passed but the security scan found {} high-severity issue(s)", scan.count(security::Severity::High))
+    } else {
+        tests_detail
     };
     stages.push(Stage { stage: "verify", ok: verify_ok, detail: verify_detail });
 
     // A task is verified only if a command produced evidence for it.
-    let evidenced = ["Scaffold the project structure", "Implement the application logic and API surface", "Implement the user interface", "Write and run automated tests", "Write run and build documentation"];
+    let mut evidenced = vec![
+        "Scaffold the project structure",
+        "Implement the application logic and API surface",
+        "Implement the user interface",
+        "Write and run automated tests",
+        "Write run and build documentation",
+    ];
+    if scan.files_scanned > 0 {
+        evidenced.push("Run security checks");
+    }
     let mut verified = Vec::new();
     let mut unverified = Vec::new();
     for task in &plan {
@@ -862,9 +960,23 @@ pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> Deli
     }
 
     let mut limitations = vec![
-        "No local model is wired into the desktop shell yet; the application code is the deterministic scaffold.".to_string(),
         "Performance was not measured; no benchmark is claimed.".to_string(),
+        "No end-to-end browser test was executed unless the project declares one.".to_string(),
     ];
+    match (&runtime_label, model_note_written) {
+        (None, _) => limitations.insert(
+            0,
+            "No local model server was found on 127.0.0.1, so the application code is the deterministic scaffold and no notes were written.".to_string(),
+        ),
+        (Some(name), false) => limitations.insert(
+            0,
+            format!("A local model ({name}) was reachable but produced no usable notes; the application code is the deterministic scaffold."),
+        ),
+        (Some(_), true) => limitations.insert(
+            0,
+            "Application code is the deterministic scaffold; the local model contributed the notes only.".to_string(),
+        ),
+    }
     if !verify_ok {
         limitations.insert(0, "Verification did not pass; nothing in this delivery is claimed to work.".to_string());
     }
@@ -887,6 +999,9 @@ pub fn build_project(project_id: &str, project_dir: &Path, prompt: &str) -> Deli
         unverified,
         limitations,
         duration_ms: started.elapsed().as_millis() as u64,
+        runtime: runtime_label,
+        security_summary: scan.summary(),
+        security_passed: scan.passes(),
     }
 }
 
@@ -958,8 +1073,10 @@ mod tests {
         let report = build_project("p-test", &dir, "Build a web app to manage invoices and clients with search");
         assert!(report.verified_ok(), "stages: {:?}", report.stages);
         assert!(report.stages.iter().any(|s| s.stage == "verify" && s.ok));
-        assert_eq!(report.verified.len(), 5);
-        assert_eq!(report.unverified.len(), 2); // security checks + search task
+        assert!(report.stages.iter().any(|s| s.stage == "security" && s.ok), "security scan must run and pass");
+        assert!(report.security_passed);
+        assert_eq!(report.verified.len(), 6); // security checks are now evidenced
+        assert_eq!(report.unverified.len(), 1); // only the search task: security is now evidenced
         assert!(dir.join("src/store.js").exists());
         assert!(dir.join("test/store.test.js").exists());
         std::fs::remove_dir_all(&dir).ok();

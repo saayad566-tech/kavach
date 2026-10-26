@@ -8,15 +8,16 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
     <header>
       <div>
         <h1>Kavach</h1>
         <p class="muted">Local-first application builder · no account · no telemetry</p>
       </div>
-      <span id="host-badge" class="pill">connecting…</span>
+      <span id="host-badge" class="pill" role="status" aria-live="polite">connecting…</span>
     </header>
 
-    <main>
+    <main id="main">
       <section class="card" id="device-card">
         <h2>This device</h2>
         <p class="muted" id="device-sub">Probing…</p>
@@ -29,11 +30,8 @@
 
       <section class="card">
         <h2>Build something</h2>
-        <p class="notice" id="inference-notice">
-          <strong>Local inference is not implemented in this build.</strong> The application
-          code comes from Kavach's deterministic scaffold. No model is loaded, downloaded or
-          called, so the generated project is the same every time. Wiring a local model into
-          the desktop shell is the next milestone.
+        <p class="notice" id="inference-notice" role="status" aria-live="polite">
+          <strong>Checking for a local model…</strong>
         </p>
         <label class="field">
           <span>What do you want to build?</span>
@@ -42,9 +40,10 @@
         <div class="row">
           <button id="build" class="primary">Build it</button>
           <button id="preview-req">Show requirements</button>
-          <span id="busy" class="muted"></span>
+          <button id="export" disabled>Export project…</button>
+          <span id="busy" class="muted" role="status" aria-live="polite"></span>
         </div>
-        <p id="error" class="error" hidden></p>
+        <p id="error" class="error" role="alert" hidden></p>
       </section>
 
       <section class="card" id="requirements-card" hidden>
@@ -60,6 +59,8 @@
           <thead><tr><th>Stage</th><th>Result</th><th>Detail</th></tr></thead>
           <tbody id="stages"></tbody>
         </table>
+        <h3>Security scan</h3>
+        <p id="security" class="muted"></p>
         <h3>Limitations</h3>
         <ul id="limitations" class="tight"></ul>
         <h3>Files</h3>

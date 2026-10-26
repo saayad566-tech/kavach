@@ -10,6 +10,9 @@ use std::path::Path;
 
 use crate::builder;
 use crate::exec::{run, ExecOptions};
+use crate::export::export_project as do_export;
+use crate::runtime;
+use crate::security;
 use crate::install::{install_from_file, verify_installed, InstallRequest};
 use crate::json::{err, ok, Json};
 use crate::path::{delete_project_file, list_project_files, safe_join, write_project_file};
@@ -239,8 +242,68 @@ pub fn extract_requirements(prompt: &str) -> String {
         .raw("plan", &format!("[{}]", plan.join(","))))
 }
 
-/// `build_project(workspace, project_id, prompt)` — the whole pipeline.
-pub fn build_project(workspace: &str, project_id: &str, prompt: &str) -> String {
+/// `probe_runtime()` — is a model server running on this machine?
+///
+/// Never starts one. Absence is reported as absence.
+pub fn probe_runtime() -> String {
+    match runtime::discover("127.0.0.1", &runtime::default_ports(), None) {
+        Some(found) => {
+            let models = runtime::list_models(&found).unwrap_or_default();
+            ok(Json::object()
+                .bool("available", true)
+                .str("kind", found.kind.as_str())
+                .str("host", &found.host)
+                .num("port", found.port as i64)
+                .str("model", &found.model)
+                .strings("models", &models))
+        }
+        None => ok(Json::object()
+            .bool("available", false)
+            .str("detail", "no model server answered on 127.0.0.1:11434 or :8080; start Ollama or a llama.cpp server, or run without one")),
+    }
+}
+
+/// `security_scan(workspace, project_id)` — scan a project's files.
+pub fn security_scan(workspace: &str, project_id: &str) -> String {
+    let store = Store::load(Path::new(workspace));
+    let dir = store.project_dir(project_id);
+    if !dir.is_dir() {
+        return err(&format!("unknown project {project_id}"), "not-found");
+    }
+    let report = security::scan_project(&dir);
+    let findings: Vec<String> = report
+        .findings
+        .iter()
+        .map(|f| {
+            Json::object()
+                .str("path", &f.path)
+                .num("line", f.line as i64)
+                .str("severity", f.severity.as_str())
+                .str("rule", f.rule)
+                .str("detail", &f.detail)
+                .finish()
+        })
+        .collect();
+    ok(Json::object()
+        .num("filesScanned", report.files_scanned as i64)
+        .bool("passed", report.passes())
+        .str("summary", &report.summary())
+        .raw("findings", &format!("[{}]", findings.join(","))))
+}
+
+/// `export_project(workspace, project_id, destination)` — copy the work out.
+pub fn export_project(workspace: &str, project_id: &str, destination: &str) -> String {
+    match do_export(Path::new(workspace), project_id, destination) {
+        Ok(result) => ok(Json::object()
+            .str("destination", &result.destination)
+            .num("files", result.files.len() as i64)
+            .uint("bytes", result.bytes)),
+        Err(e) => err(&e.to_string(), "export-failed"),
+    }
+}
+
+/// `build_project(workspace, project_id, prompt, use_local_model)` — the whole pipeline.
+pub fn build_project(workspace: &str, project_id: &str, prompt: &str, use_local_model: bool) -> String {
     if prompt.trim().len() < 8 {
         return err("the request is too short to build from", "invalid");
     }
@@ -250,7 +313,12 @@ pub fn build_project(workspace: &str, project_id: &str, prompt: &str) -> String 
     // Snapshot before mutating, so a bad build can be undone.
     let checkpoint = store.checkpoint(project_id, "before build").map(|c| c.id).unwrap_or_default();
 
-    let report = builder::build_project(project_id, &dir, prompt);
+    let found = if use_local_model {
+        runtime::discover("127.0.0.1", &runtime::default_ports(), None)
+    } else {
+        None
+    };
+    let report = builder::build_project_with(project_id, &dir, prompt, found.as_ref());
     let _ = store.record_outcome(project_id, report.verified.clone(), report.unverified.clone());
 
     let mut payload = report.to_json();
@@ -403,6 +471,47 @@ mod tests {
     }
 
     #[test]
+    fn probe_runtime_reports_absence_without_starting_anything() {
+        let out = probe_runtime();
+        assert!(out.starts_with("{\"ok\":true"), "{out}");
+        assert!(out.contains("\"available\":"), "{out}");
+    }
+
+    #[test]
+    fn security_scan_command_reports_findings() {
+        let ws = tmp("scan");
+        let created = create_project(&ws.to_string_lossy(), "Build a web app to manage invoices and clients");
+        let start = created.find("\"id\":\"").unwrap() + 6;
+        let end = created[start..].find('"').unwrap() + start;
+        let project_id = created[start..end].to_string();
+        let dir = ws.join("projects").join(&project_id);
+        std::fs::write(dir.join("leak.js"), "eval(x);\n").unwrap();
+
+        let out = security_scan(&ws.to_string_lossy(), &project_id);
+        assert!(out.contains("\"rule\":\"eval\""), "{out}");
+        assert!(out.contains("\"passed\":"), "{out}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn export_command_copies_the_tree_out() {
+        let ws = tmp("export");
+        let created = create_project(&ws.to_string_lossy(), "Build a web app to track suppliers and orders");
+        let start = created.find("\"id\":\"").unwrap() + 6;
+        let end = created[start..].find('"').unwrap() + start;
+        let project_id = created[start..end].to_string();
+        let dir = ws.join("projects").join(&project_id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.js"), "export const a = 1;\n").unwrap();
+
+        let destination = ws.join("out");
+        let out = export_project(&ws.to_string_lossy(), &project_id, &destination.to_string_lossy());
+        assert!(out.contains("\"ok\":true"), "{out}");
+        assert!(destination.join("a.js").exists());
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
     fn end_to_end_build_through_the_command_surface() {
         let ws = tmp("e2e");
         let created = create_project(&ws.to_string_lossy(), "Build a web app to manage invoices and clients with search");
@@ -412,7 +521,7 @@ mod tests {
         let end = created[start..].find('"').unwrap() + start;
         let project_id = created[start..end].to_string();
 
-        let built = build_project(&ws.to_string_lossy(), &project_id, "Build a web app to manage invoices and clients with search");
+        let built = build_project(&ws.to_string_lossy(), &project_id, "Build a web app to manage invoices and clients with search", false);
         assert!(built.contains("\"ok\":true"), "{built}");
         assert!(built.contains("\"stage\":\"verify\",\"ok\":true"), "{built}");
         assert!(built.contains("checkpointId"), "{built}");

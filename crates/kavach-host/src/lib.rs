@@ -11,15 +11,21 @@
 //!   * `install`  — licence gate and hash verification before anything is trusted
 //!   * `builder`  — requirements → plan → scaffold → verify → delivery report
 //!   * `store`    — project index on disk, no database engine to link
-//!   * `commands` — the surface the Tauri shell exposes
+//!   * `runtime`   — local inference over a loopback socket to the user's own model server
+//!   * `security`  — scanning generated code, which is what makes the security task provable
+//!   * `export`    — getting the work back out as a plain source tree
+//!   * `commands`  — the surface the Tauri shell exposes
 
 pub mod builder;
 pub mod commands;
 pub mod exec;
+pub mod export;
 pub mod install;
 pub mod json;
 pub mod path;
 pub mod probe;
+pub mod runtime;
+pub mod security;
 pub mod sha256;
 pub mod store;
 
@@ -41,4 +47,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "list_projects",
     "list_checkpoints",
     "restore_checkpoint",
+    "probe_runtime",
+    "security_scan",
+    "export_project",
 ];

@@ -127,6 +127,9 @@ if not (dist / "index.html").exists():
 else:
     note(f"frontend: {dist.relative_to(ROOT)}/index.html")
     for asset in re.findall(r'(?:src|href)="([^":]+)"', (dist / "index.html").read_text()):
+        # Fragments (#main) and protocol-relative references are not files.
+        if asset.startswith("#") or asset.startswith("//") or asset.startswith(("http", "mailto:")):
+            continue
         if not (dist / asset).exists():
             fail(f"index.html references {asset}, which is not in frontendDist")
     if (DESKTOP / conf.get("build", {}).get("beforeBuildCommand", "") or "x").name == "":
