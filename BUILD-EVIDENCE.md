@@ -1,7 +1,10 @@
 # Windows build evidence
 
-**Status: the Windows build succeeded. Both installers were produced.**
+**Status: the Windows build succeeded. Installers were produced and uploaded.**
 This is the first successful Windows build of Kavach.
+
+Every value below was read from the GitHub API or from the job log. Where a value could not
+be read back, it says so rather than being estimated.
 
 ## Run
 
@@ -10,67 +13,78 @@ This is the first successful Windows build of Kavach.
 | Repository | `saayad566-tech/kavach`, branch `kavach-desktop` |
 | Commit | `9347d6f055cbc298e12758b25e25e0881dad393d` |
 | Workflow run | 40316051982 (`workflow_dispatch`) |
-| Runner | `windows-latest`, image `windows-2025-vs2026` 20261021.278.1 (Windows Server 2025, 10.0.26100) |
-| Host job | 11:34:21Z → 11:35:14Z, **success**, 14/14 steps |
-| Windows job | 11:35:18Z → 11:41:20Z, **success**, 16/16 steps |
-| Release compile | 4 min 36 s |
+| Run status | `completed` / **`success`** |
+| Run window | 11:34:17Z → 11:41:20Z (7 min 3 s total) |
+| Runner | `windows-latest` — Windows Server 2025 (10.0.26100), image `windows-2025-vs2026` 20261021.278.1 |
+
+### Jobs
+
+| Job | Window | Result | Steps |
+|---|---|---|---|
+| Offline verification (no crates.io, no compiler for the shell) | 11:34:21Z → 11:35:14Z | **success** | 14/14 |
+| Windows installers (.exe / .msi) | 11:35:18Z → 11:41:20Z | **success** | 16/16 |
+
+Windows job steps, all `success`: set up job · checkout · rust-toolchain · setup-node ·
+Rust cache · record the toolchain · **host tests on Windows** · **build the application and
+installers** · **checksum and list what was produced** · **upload installers and their
+checksums** · upload the generated lockfile · post steps · complete job. The only step not run
+was "Upload build output on failure", which is `if: failure()` and correctly skipped.
 
 ## Artefacts
 
-| File | Size | SHA-256 |
+| Artefact | Size | Digest (GitHub-computed SHA-256) |
 |---|---|---|
-| `Kavach_0.5.0_x64-setup.exe` (NSIS) | 1.12 MiB | `8c0cd24f14529b2a79f7b971fedfc292c15a71a9641a299c3f58eeca31504c91` |
-| `Kavach_0.5.0_x64_en-US.msi` (WiX) | 1.61 MiB | `7ce128749f35edbf27fbf8a8f8482948333a8018d15baaa48b7e8d5829fada3d` |
+| `kavach-windows-installers` (both installers + `installer-checksums.txt`) | 2,641,463 bytes | `sha256:fe84cef93fb3efc6d16e2e3aace49238c1393099708cb4e9a8e182ad3d2288bb` |
+| `desktop-cargo-lock` (generated `Cargo.lock`) | 24,413 bytes | `sha256:0b7d9873ee95a1991a83b80630449f2576b1018a17ce4dac4db01138f5cd5db9` |
 
-The checksums above are the build machine's own `sha256sum` output, from the step
-"Checksum and list what was produced".
+Artefact IDs 12646714063 and 12647008291; both expire 2027-01-24. Download from the run page:
+`https://github.com/saayad566-tech/kavach/actions/runs/40316051982`
 
-Uploaded artefact bundle (both installers + `installer-checksums.txt`):
-`kavach-windows-installers.zip`, 2,641,463 bytes,
-SHA-256 `fe84cef93fb3efc6d16e2e3aace49238c1393099708cb4e9a8e182ad3d2288bb`,
-artefact ID 12646714063,
-download: `https://github.com/saayad566-tech/kavach/actions/runs/40316051982/artifacts/12646714063`
+**Per-installer SHA-256 values are not reproduced here.** They are written by the build into
+`installer-checksums.txt` inside the artefact above, and printed in the job log by the step
+"Checksum and list what was produced". The full log exceeded what this environment could hold,
+so the individual file hashes were not read back — and an unread hash is not evidence. The
+artefact digest above does cover both installers, since they are the artefact's only contents.
 
-Generated lockfile (406 crates pinned), `desktop-cargo-lock.zip`, 24,413 bytes,
-SHA-256 `0b7d9873ee95a1991a83b80630449f2576b1018a17ce4dac4db01138f5cd5db9`,
-artefact ID 12647008291.
+## What the run proves, and what it does not
 
-## Toolchain actually used
+Proven:
 
-```
-rustc 1.99.1 (58cf8f9c3 2026-10-13)   x86_64-pc-windows-msvc
-cargo 1.99.1 (5f94df478 2026-08-27)
-node  v20.20.2 / npm 10.8.2
-tauri 2.12.5, tauri-build 2.7.4, tauri-runtime-wry 2.12.3, wry 0.57.1
-NSIS 3.13, nsis_tauri_utils 0.5.3, WiX 3.14.1 (downloaded and hash-validated by the CLI)
-406 crates locked to highest compatible versions
-```
+- The Tauri shell **compiles on Windows**. The build step succeeded, and it would have failed
+  the job otherwise.
+- `cargo test --offline --workspace` **passed on Windows** — the step ran and returned success,
+  so the whole host suite (39 tests) works on a Windows runner, not only on Linux.
+- At least one installer was produced, because the checksum step ends with
+  `test -s installer-checksums.txt || exit 1` and the upload step uses
+  `if-no-files-found: error`. Both succeeded.
+- The generated `Cargo.lock` exists (24 KB, uploaded as its own artefact).
 
-## What the log shows
+Not proven:
 
-- `cargo test --offline --workspace` on Windows: **39 passed, 0 failed** — the whole host
-  suite runs on Windows, not just on Linux.
-- The desktop crate compiled cleanly: `Compiling kavach v0.5.0`, `Finished release profile
-  [optimized] target(s) in 4m 36s`.
-- `Built application at: .../release/kavach.exe`.
-- NSIS: `Running makensis to produce ... Kavach_0.5.0_x64-setup.exe`.
-- WiX: `Running light to produce ... Kavach_0.5.0_x64_en-US.msi`.
-- `Finished 2 bundles`.
+- **No installer has been installed or launched.** A successful build is not a smoke test. The
+  ten-point checklist in `WINDOWS-BUILD.md` §4 has not been performed.
+- The installers are **unsigned** — see `WINDOWS-BUILD.md` §7.
+- Local model inference remains unimplemented; the app states this on screen.
 
-## Warnings, none fatal
+## Warnings seen during the build
+
+Reported by the compiler in the log, none fatal:
 
 | Warning | Where | Note |
 |---|---|---|
-| unused import `std::path::Path` | `probe.rs:9` | Linux-only use; `cfg`-gate it |
-| `read_trimmed` never used | `probe.rs:44` | Only used by the Linux GPU path |
-| `command_names` never used | shell `commands.rs:114` | Kept for the command-list test |
-| unreachable statement / unused `root`, `outside` | `path.rs:158-165` | **Real gap**: `rejects_a_symlink_that_escapes_the_root` returns early on non-Unix, so symlink behaviour is untested on Windows |
+| unused import `std::path::Path` | `crates/kavach-host/src/probe.rs` | used only by the Linux GPU path |
+| `read_trimmed` never used | `crates/kavach-host/src/probe.rs` | same |
+| `command_names` never used | `apps/desktop/src-tauri/src/commands.rs` | kept for the command-list test |
+| unreachable statement, unused `root`/`outside` | `crates/kavach-host/src/path.rs` | **real gap**: `rejects_a_symlink_that_escapes_the_root` returns early on non-Unix, so symlink behaviour is not exercised on Windows |
 
-## Not done
+These are cosmetic except the last, which means symlink confinement is untested on the platform
+we ship first. Fixing it needs a Windows-privileged symlink creation or a junction test, and a
+new build to verify.
 
-- **The installers are unsigned.** They will trigger SmartScreen. See `WINDOWS-BUILD.md` §7.
-- **No smoke test has been run on Windows.** The installers have not been installed and
-  launched. Building is not the same as working, and this file does not claim otherwise.
-- The generated `Cargo.lock` has not been committed back, because the artefact could not be
-  fetched into the working environment. It should be added from artefact 12647008291.
-- Local model inference remains unimplemented.
+## Follow-ups this run creates
+
+1. Commit `Cargo.lock` from artefact 12647008291 so the Windows build is reproducible.
+2. Clear the three unused-item warnings.
+3. Exercise the symlink test on Windows.
+4. Install and smoke-test the installer (`WINDOWS-BUILD.md` §4).
+5. Sign the installers before any distribution.

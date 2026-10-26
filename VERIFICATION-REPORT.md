@@ -2,17 +2,19 @@
 
 **Milestone: first successful Windows build · 26 October 2026**
 
-**The Windows build succeeded.** Run 40316051982 on `windows-latest` produced both
-installers from commit `9347d6f0`:
+**The Windows build succeeded.** Run 40316051982 on `windows-latest` built the installers
+from commit `9347d6f0`, and `cargo test --offline --workspace` passed on Windows (39 tests).
+Both jobs are green: 14/14 steps on Linux, 16/16 on Windows, 7 minutes end to end.
 
-| File | Size | SHA-256 |
-|---|---|---|
-| `Kavach_0.5.0_x64-setup.exe` | 1.12 MiB | `8c0cd24f14529b2a79f7b971fedfc292c15a71a9641a299c3f58eeca31504c91` |
-| `Kavach_0.5.0_x64_en-US.msi` | 1.61 MiB | `7ce128749f35edbf27fbf8a8f8482948333a8018d15baaa48b7e8d5829fada3d` |
+The installers are in artefact `kavach-windows-installers` (2,641,463 bytes,
+`sha256:fe84cef93fb3efc6d16e2e3aace49238c1393099708cb4e9a8e182ad3d2288bb`). Per-file hashes are
+written by the build into `installer-checksums.txt` inside that artefact; they are not repeated
+here because the full job log could not be read back in this environment, and an unread hash is
+not evidence. Detail in `BUILD-EVIDENCE.md`.
 
-39 host tests passed on Windows; the release build took 4 min 36 s. Full detail in
-`BUILD-EVIDENCE.md`. **The installers are unsigned and have not been installed or launched** —
-a successful build is not a smoke test.
+**The installers are unsigned and have not been installed or launched.** A successful build is
+not a smoke test.
+
 
 ---
 
