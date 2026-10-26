@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   host:
-    name: Native host (Rust, offline, no crates.io)
+    name: Offline verification (no crates.io, no compiler for the shell)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,17 +19,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Unit and integration tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python tooling for the static checks
+        run: pip install --quiet pyyaml pillow
+
+      - name: Host tests (offline, zero dependencies)
         run: cargo test --offline --workspace
-      - name: Desktop configuration is internally consistent
-        run: python3 scripts/check-desktop-config.py
-      - name: UI renders against a stubbed IPC
-        run: node scripts/verify-ui.mjs
-      - name: Commands used by the UI all exist in the host
+
+      - name: Desktop configuration and packaging setup
+        run: python3 scripts/check-desktop-config.py --verbose
+
+      - name: UI only calls commands that exist
         run: python3 scripts/check-ui-contract.py
 
+      - name: UI renders against a stubbed IPC
+        run: node scripts/verify-ui.mjs
+
   windows:
-    name: Windows installer (.exe / .msi)
+    name: Windows installers (.exe / .msi)
     needs: host
     runs-on: windows-latest
     steps:
@@ -46,32 +55,56 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      - name: Record the toolchain actually used
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          node --version
+          echo "TAURI_CLI_VERSION=${{ env.TAURI_CLI_VERSION }}"
+
       - name: Host tests on Windows
         run: cargo test --offline --workspace
 
-      - name: Build the desktop application and installers
+      - name: Build the application and installers
         working-directory: apps/desktop/src-tauri
-        run: npx --yes @tauri-apps/cli@^2 build --target x86_64-pc-windows-msvc --bundles nsis,msi
+        env:
+          # Pinned so a later major cannot change the build under us.
+          TAURI_CLI_VERSION: "2"
+        run: npx --yes @tauri-apps/cli@2 build --target x86_64-pc-windows-msvc --bundles nsis,msi
 
-      - name: List what was produced
+      - name: Checksum and list what was produced
         shell: bash
         run: |
-          find apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle -type f \
-            \( -name '*.exe' -o -name '*.msi' \) -print0 | xargs -0 -r sha256sum
+          set -euo pipefail
+          bundle=apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+          find "$bundle" -type f \( -name '*.exe' -o -name '*.msi' \) -print0 \
+            | xargs -0 -r sha256sum | tee installer-checksums.txt
+          test -s installer-checksums.txt || { echo "no installer was produced"; exit 1; }
 
-      - name: Upload installers
+      - name: Upload installers and their checksums
         uses: actions/upload-artifact@v4
         with:
           name: kavach-windows-installers
           path: |
             apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            installer-checksums.txt
           if-no-files-found: error
 
-      - name: Upload build log on failure
+      - name: Upload the generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-cargo-lock
+          path: apps/desktop/src-tauri/Cargo.lock
+          if-no-files-found: warn
+
+      - name: Upload build output on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: kavach-windows-failure
-          path: apps/desktop/src-tauri/target/**/*.log
+          path: |
+            apps/desktop/src-tauri/target/**/*.log
+            installer-checksums.txt
           if-no-files-found: ignore

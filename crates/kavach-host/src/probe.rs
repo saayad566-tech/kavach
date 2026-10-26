@@ -95,63 +95,86 @@ fn cpu_model_and_flags() -> (Option<String>, Vec<String>) {
     (std::env::var("PROCESSOR_IDENTIFIER").ok(), Vec::new())
 }
 
-/// Disk usage for a path.
+/// Windows `ULARGE_INTEGER`: two halves, because the FFI struct must match exactly.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+pub struct U64Parts {
+    pub low: u32,
+    pub high: u32,
+}
+
+impl U64Parts {
+    pub fn value(&self) -> u64 {
+        ((self.high as u64) << 32) | self.low as u64
+    }
+}
+
+/// Signature of `GetDiskFreeSpaceExW`.
+pub type DiskFreeFn =
+    unsafe extern "system" fn(*const u16, *mut U64Parts, *mut U64Parts, *mut U64Parts) -> i32;
+
+#[cfg(windows)]
+extern "system" {
+    fn GetDiskFreeSpaceExW(
+        directory: *const u16,
+        free_bytes_available: *mut U64Parts,
+        total_bytes: *mut U64Parts,
+        total_free_bytes: *mut U64Parts,
+    ) -> i32;
+}
+
+/// Marshal a path and read back the three sizes.
 ///
-/// Linux uses `df -Pk`. Windows uses `wmic`-free PowerShell, which is present on every
-/// supported version. Both are subprocess calls, so both can fail — and failure is
-/// reported, not guessed.
-pub fn disk_usage(path: &str) -> Option<DiskUsage> {
-    #[cfg(target_os = "linux")]
-    let out = run("df", &["-Pk".to_string(), path.to_string()], ExecOptions { timeout_ms: 5_000, ..Default::default() }).ok()?;
-
-    #[cfg(target_os = "windows")]
-    let out = run(
-        "powershell",
-        &[
-            "-NoProfile".to_string(),
-            "-Command".to_string(),
-            format!(
-                "$d = Get-PSDrive -PSProvider FileSystem | Where-Object {{ $_.Name -eq (Split-Path -Qualifier '{}').TrimEnd(':') }}; \
-                 if ($d) {{ \"{0} {1}\" -f ($d.Used + $d.Free), $d.Free }}",
-                path.replace('\'', "''")
-            ),
-        ],
-        ExecOptions { timeout_ms: 10_000, ..Default::default() },
-    )
-    .ok()?;
-
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    let out = {
-        let _ = path;
-        return None;
-    };
-
-    if out.exit_code != 0 {
+/// The FFI symbol itself can only be resolved on Windows, but the marshalling and the
+/// conversion are plain Rust, so they are tested here with a stub callable — which is the
+/// only part that could plausibly be wrong.
+pub fn disk_from_ffi(path: &str, call: DiskFreeFn) -> Option<DiskUsage> {
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0u16)).collect();
+    let mut available = U64Parts::default();
+    let mut total = U64Parts::default();
+    let mut free = U64Parts::default();
+    let ok = unsafe { call(wide.as_ptr(), &mut available, &mut total, &mut free) };
+    if ok == 0 {
         return None;
     }
+    Some(DiskUsage { total_bytes: total.value(), available_bytes: available.value() })
+}
 
+/// Disk usage for a path.
+///
+/// Linux uses `df -Pk`; Windows calls `GetDiskFreeSpaceExW` directly, because parsing
+/// PowerShell output for a number the OS can hand over is both fragile and unnecessary.
+pub fn disk_usage(path: &str) -> Option<DiskUsage> {
     #[cfg(target_os = "linux")]
     {
+        let out = run(
+            "df",
+            &["-Pk".to_string(), path.to_string()],
+            ExecOptions { timeout_ms: 5_000, ..Default::default() },
+        )
+        .ok()?;
+        if out.exit_code != 0 {
+            return None;
+        }
         let line = out.stdout.lines().nth(1)?;
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() < 4 {
             return None;
         }
         let total = fields[1].parse::<u64>().ok()? * 1024;
-        let avail = fields[3].parse::<u64>().ok()? * 1024;
-        Some(DiskUsage { total_bytes: total, available_bytes: avail })
+        let available = fields[3].parse::<u64>().ok()? * 1024;
+        Some(DiskUsage { total_bytes: total, available_bytes: available })
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
-        let fields: Vec<&str> = out.stdout.split_whitespace().collect();
-        if fields.len() < 2 {
-            return None;
-        }
-        Some(DiskUsage {
-            total_bytes: fields[0].parse::<u64>().ok()?,
-            available_bytes: fields[1].parse::<u64>().ok()?,
-        })
+        disk_from_ffi(path, GetDiskFreeSpaceExW)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = path;
+        None
     }
 }
 
@@ -336,6 +359,46 @@ mod tests {
             assert!(p.ram_available_bytes <= p.ram_total_bytes);
             assert!(p.disk.total_bytes > 0);
         }
+    }
+
+    unsafe extern "system" fn stub_disk(
+        _dir: *const u16,
+        available: *mut U64Parts,
+        total: *mut U64Parts,
+        _free: *mut U64Parts,
+    ) -> i32 {
+        unsafe {
+            (*total).low = 0x0000_1000;
+            (*total).high = 1; // 4 GiB + 4096 bytes
+            (*available).low = 0x0000_0800;
+            (*available).high = 0;
+        }
+        1
+    }
+
+    unsafe extern "system" fn stub_failure(
+        _dir: *const u16,
+        _a: *mut U64Parts,
+        _b: *mut U64Parts,
+        _c: *mut U64Parts,
+    ) -> i32 {
+        0
+    }
+
+    #[test]
+    fn windows_disk_marshalling_is_correct() {
+        let usage = disk_from_ffi("C:\\", stub_disk).expect("stub reports success");
+        assert_eq!(usage.total_bytes, (1u64 << 32) + 0x1000);
+        assert_eq!(usage.available_bytes, 0x800);
+        assert!(disk_from_ffi("C:\\", stub_failure).is_none(), "a zero return must mean unknown, not zero bytes");
+    }
+
+    #[test]
+    fn large_integer_halves_combine_correctly() {
+        assert_eq!(U64Parts { low: 0, high: 0 }.value(), 0);
+        assert_eq!(U64Parts { low: 1, high: 0 }.value(), 1);
+        assert_eq!(U64Parts { low: 0, high: 1 }.value(), 1 << 32);
+        assert_eq!(U64Parts { low: u32::MAX, high: u32::MAX }.value(), u64::MAX);
     }
 
     #[test]

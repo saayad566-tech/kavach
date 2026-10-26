@@ -93,6 +93,17 @@ ul.tight li { margin-bottom: 4px; }
 ul.files { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
 
 .error { color: var(--bad); font-size: 13.5px; margin: 10px 0 0; }
+
+.notice {
+  background: rgba(224, 168, 0, 0.1);
+  border: 1px solid rgba(224, 168, 0, 0.35);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #f0d58a;
+  margin: 0 0 12px;
+}
+.notice strong { color: #ffd75e; }
 details { margin-top: 8px; font-size: 13.5px; }
 summary { cursor: pointer; color: var(--accent); }
 

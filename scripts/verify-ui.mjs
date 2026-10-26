@@ -96,6 +96,7 @@ const checks = {
   'device panel is populated': /Test CPU/.test(dom) && /16\.0 GiB/.test(dom),
   'unmeasured items are listed': /never measured/.test(dom),
   'projects list rendered': /Invoice app/.test(dom),
+  'local inference is declared unimplemented': /Local inference is not implemented in this build/.test(dom),
   // The element always exists; what matters is that it carries no message.
   'no error banner': (() => {
     const match = dom.match(/<p id="error"[^>]*>([\s\S]*?)<\/p>/);
