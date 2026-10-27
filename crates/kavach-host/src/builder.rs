@@ -404,11 +404,27 @@ export function createStore(dataFile) {
 }
 "#;
 
+// The data pipeline and analysis modules are real files, embedded at compile time.
+// Keeping them as files means they can be syntax-checked and unit-tested on their own
+// (`node --test crates/kavach-host/assets/app/test`), rather than only existing inside a
+// generated project.
+const TYPES_JS: &str = include_str!("../assets/app/src/types.js");
+const PIPELINE_JS: &str = include_str!("../assets/app/src/pipeline.js");
+const ANALYTICS_JS: &str = include_str!("../assets/app/src/analytics.js");
+const ANALYTICS_TEST_JS: &str = include_str!("../assets/app/test/analytics.test.js");
+const PIPELINE_TEST_JS: &str = include_str!("../assets/app/test/pipeline.test.js");
+const SAMPLE_CSV: &str = include_str!("../assets/app/data/sample.csv");
+
 const SERVER_JS: &str = r#"import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, ValidationError, COLLECTIONS } from './store.js';
+import { readDataset } from './pipeline.js';
+import {
+  describeAll, groupAggregate, topN, dataQuality, linearTrend, timeBucket,
+  filterWhere, sortBy, paginate, toCsv, count,
+} from './analytics.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, '..', 'public');
@@ -425,6 +441,15 @@ function json(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(payload) });
   res.end(payload);
+}
+
+// One read per process: the sample file does not change while the server runs.
+let datasetCache = null;
+async function loadDataset() {
+  if (datasetCache) return datasetCache;
+  const file = process.env.KAVACH_DATASET || path.join(here, '..', 'data', 'sample.csv');
+  datasetCache = await readDataset(file);
+  return datasetCache;
 }
 
 async function readBody(req) {
@@ -448,8 +473,65 @@ export function createApp() {
     const url = new URL(req.url || '/', 'http://localhost');
     const parts = url.pathname.split('/').filter(Boolean);
     try {
+      // ---- data pipeline and analysis -------------------------------------
+      // Every route below reads one local CSV through the pipeline. Nothing leaves the
+      // machine; the analysis runs in this process.
+      if (url.pathname.startsWith('/api/analysis')) {
+        const dataset = await loadDataset();
+        const field = url.searchParams.get('field') || '';
+        const keyField = url.searchParams.get('key') || '';
+
+        switch (url.pathname) {
+          case '/api/analysis/overview':
+            return json(res, 200, {
+              source: dataset.source,
+              rows: dataset.rows,
+              schema: dataset.schema,
+              numeric: describeAll(dataset.records),
+              quality: dataQuality(dataset.records, dataset.schema),
+            });
+          case '/api/analysis/top': {
+            const n = Number(url.searchParams.get('n') || 5);
+            if (!field) return json(res, 400, { error: 'field is required' });
+            return json(res, 200, { field, items: topN(dataset.records, field, n) });
+          }
+          case '/api/analysis/group': {
+            const how = url.searchParams.get('how') || 'sum';
+            if (!keyField || !field) return json(res, 400, { error: 'key and field are required' });
+            return json(res, 200, { key: keyField, field, how, groups: groupAggregate(dataset.records, keyField, field, how) });
+          }
+          case '/api/analysis/trend': {
+            const values = dataset.records.map((r) => r[field]).filter((v) => typeof v === 'number');
+            return json(res, 200, { field, trend: linearTrend(values), points: values.length });
+          }
+          case '/api/analysis/buckets': {
+            const bucket = url.searchParams.get('bucket') || 'month';
+            const dateField = url.searchParams.get('date') || 'date';
+            return json(res, 200, { dateField, bucket, buckets: timeBucket(dataset.records, dateField, bucket) });
+          }
+          case '/api/analysis/filter': {
+            const op = url.searchParams.get('op') || 'eq';
+            const raw = url.searchParams.get('value') ?? '';
+            const value = raw !== '' && !Number.isNaN(Number(raw)) ? Number(raw) : raw;
+            return json(res, 200, { items: filterWhere(dataset.records, { field, op, value }) });
+          }
+          case '/api/analysis/rows': {
+            const page = Number(url.searchParams.get('page') || 1);
+            const size = Number(url.searchParams.get('size') || 25);
+            const direction = url.searchParams.get('dir') || 'asc';
+            const ordered = field ? sortBy(dataset.records, field, direction) : dataset.records;
+            return json(res, 200, paginate(ordered, page, size));
+          }
+          case '/api/analysis/export.csv':
+            res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8' });
+            return res.end(toCsv(dataset.records));
+          default:
+            return json(res, 404, { error: `unknown analysis route ${url.pathname}` });
+        }
+      }
+
       if (url.pathname === '/api/health') {
-        json(res, 200, { ok: true, collections: COLLECTIONS });
+        json(res, 200, { ok: true, collections: COLLECTIONS, analysis: true, rows: count((await loadDataset()).records) });
         return;
       }
       if (url.pathname === '/api/summary') {
@@ -514,6 +596,58 @@ const titleEl = document.getElementById('list-title');
 const form = document.getElementById('create-form');
 const formError = document.getElementById('form-error');
 const searchEl = document.getElementById('search');
+
+function fillTable(tableId, rows) {
+  const tbodyEl = document.querySelector('#' + tableId + ' tbody');
+  if (!tbodyEl) return;
+  tbodyEl.replaceChildren();
+  for (const [label, value] of rows) {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.scope = 'row';
+    th.textContent = label;
+    const td = document.createElement('td');
+    td.textContent = value === null || value === undefined ? '—' : String(value);
+    tr.append(th, td);
+    tbodyEl.append(tr);
+  }
+}
+
+// The analysis panel reads the local dataset through the pipeline. If the dataset is
+// missing the panel says so rather than showing an empty table and no reason.
+async function loadAnalysis() {
+  const sourceEl = document.getElementById('analysis-source');
+  const errorEl = document.getElementById('analysis-error');
+  if (!sourceEl) return;
+  try {
+    const overview = await api('/api/analysis/overview');
+    const numeric = Object.entries(overview.numeric)[0];
+    sourceEl.textContent =
+      overview.source.split('/').pop() + ' — ' + overview.rows + ' rows, ' +
+      Object.keys(overview.schema).length + ' fields, quality ' +
+      (overview.quality.ok ? 'clean' : overview.quality.issues.length + ' issue(s)');
+
+    if (numeric) {
+      const [field, stats] = numeric;
+      fillTable('summary', [
+        [field + ' count', stats.count],
+        ['min', stats.min],
+        ['median', stats.median],
+        ['mean', stats.mean === null ? null : stats.mean.toFixed(2)],
+        ['max', stats.max],
+      ]);
+    }
+
+    const top = await api('/api/analysis/top?field=volume&n=5');
+    fillTable('top-volume', top.items.map((item) => [item.symbol || item.name || '—', item.volume]));
+
+    const groups = await api('/api/analysis/group?key=sector&field=volume&how=sum');
+    fillTable('by-sector', groups.groups.map((group) => [group.key, group.value]));
+  } catch (err) {
+    errorEl.hidden = false;
+    errorEl.textContent = 'Analysis unavailable: ' + err.message;
+  }
+}
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -585,6 +719,7 @@ async function init() {
       }
     });
     if (health.collections.length > 0) await load(health.collections[0]);
+    await loadAnalysis();
   } catch (err) {
     statusEl.textContent = 'Cannot reach the API: ' + err.message;
   }
@@ -724,6 +859,17 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
       <h1>{title}</h1>
       <p id="status">Loading…</p>
     </header>
+    <section id="analysis" aria-labelledby="analysis-title">
+      <h2 id="analysis-title">Data analysis</h2>
+      <p id="analysis-source" class="muted">Reading the dataset…</p>
+      <div class="grid">
+        <div><h3>Summary</h3><table id="summary"><tbody></tbody></table></div>
+        <div><h3>Largest by volume</h3><table id="top-volume"><tbody></tbody></table></div>
+        <div><h3>By sector</h3><table id="by-sector"><tbody></tbody></table></div>
+      </div>
+      <p id="analysis-error" class="error" role="alert" hidden></p>
+    </section>
+
     <nav>
         {tabs}
         <input id="search" type="search" placeholder="Search…" aria-label="Search records" />
@@ -774,7 +920,13 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
         GeneratedFile { path: "public/index.html".into(), content: index_html, origin: "scaffold" },
         GeneratedFile { path: "public/app.js".into(), content: APP_JS.to_string(), origin: "scaffold" },
         GeneratedFile { path: "public/styles.css".into(), content: STYLES_CSS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "src/types.js".into(), content: TYPES_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "src/pipeline.js".into(), content: PIPELINE_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "src/analytics.js".into(), content: ANALYTICS_JS.to_string(), origin: "scaffold" },
         GeneratedFile { path: "test/store.test.js".into(), content: TEST_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "test/pipeline.test.js".into(), content: PIPELINE_TEST_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "test/analytics.test.js".into(), content: ANALYTICS_TEST_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "data/sample.csv".into(), content: SAMPLE_CSV.to_string(), origin: "scaffold" },
         GeneratedFile { path: "README.md".into(), content: readme, origin: "scaffold" },
     ]
 }
@@ -1222,7 +1374,13 @@ mod tests {
         let reqs = extract_requirements("A web app to manage invoices and clients");
         let files = scaffold(&reqs);
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-        for required in ["package.json", "src/store.js", "src/server.js", "public/index.html", "public/app.js", "public/styles.css", "test/store.test.js", "README.md"] {
+        for required in [
+            "package.json", "src/store.js", "src/server.js", "public/index.html", "public/app.js",
+            "public/styles.css", "test/store.test.js", "README.md",
+            // the data pipeline and the analysis suite
+            "src/types.js", "src/pipeline.js", "src/analytics.js",
+            "test/pipeline.test.js", "test/analytics.test.js", "data/sample.csv",
+        ] {
             assert!(paths.contains(&required), "missing {required}");
         }
         assert!(guard(&files).is_empty(), "guard found {:?}", guard(&files));

@@ -21,6 +21,8 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 |---|---|
 | Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 86 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
+| Data pipeline in generated apps | **Working** — CSV/JSON ingest, schema inference, coercion, validation, dedupe, join: 10 functions |
+| Analysis in generated apps | **Working** — 28 tested functions: descriptive stats, distribution, grouping, time series, correlation, outliers, querying, CSV export. See `FEATURES.md` |
 | Security scan of generated code | **Working** — high-severity findings fail verification |
 | Resource limits on generated code | **Working** — CPU-time and per-file write caps enforced by the kernel, so grandchildren are covered too |
 | Project store durability | **Working** — versioned index, previous copy kept, automatic recovery if the primary is corrupt |
@@ -109,6 +111,7 @@ checklist and the signing procedure.
 
 | File | Purpose |
 |---|---|
+| `FEATURES.md` | Everything a generated application can do, with the tests that prove it |
 | `FREE.md` | What "free" means here, and how it is verified |
 | `AUDIT.md` | Deep audit: method, research findings, 8 defects, compliance matrix |
 | `PRODUCTION-READINESS.md` | Criteria, honest status, and the path to shippable |
