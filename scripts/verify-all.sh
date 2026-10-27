@@ -33,6 +33,7 @@ run "UI to command contract" python3 scripts/check-ui-contract.py
 run "UI renders against a stubbed IPC" node scripts/verify-ui.mjs
 run "generated-app pipeline and analysis tests" node --test crates/kavach-host/assets/app/test
 run "structural test coverage" python3 scripts/check-test-coverage.py
+run "command surface audit" python3 scripts/check-command-surface.py
 run "zero-cost audit" python3 scripts/check-free.py
 
 printf '\n'

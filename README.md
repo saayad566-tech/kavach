@@ -19,7 +19,7 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 90 tests, zero dependencies |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 92 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
 | Data pipeline in generated apps | **Working** — CSV/JSON ingest, schema inference, coercion, validation, dedupe, join: 10 functions |
 | Analysis in generated apps | **Working** — 28 tested functions: descriptive stats, distribution, grouping, time series, correlation, outliers, querying, CSV export. See `FEATURES.md` |
@@ -28,7 +28,7 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 | Project store durability | **Working** — versioned index, previous copy kept, automatic recovery if the primary is corrupt |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
 | Model-authored application code | **Working, with a safety rule** — the model may add files; they are kept only if the project still passes its own tests, and rolled back otherwise |
-| Desktop UI (static HTML/JS) | **Working** — 21 commands, 19 render and accessibility checks; reopen projects, checkpoint on demand, read files, re-scan |
+| Desktop UI (static HTML/JS) | **Working** — 18 of 21 commands reachable (3 internal by design), 24 render and accessibility checks; reopen projects, checkpoint on demand, read files, re-scan, install and verify models |
 | Export to a plain source tree | **Working** |
 | Tauri shell compiles | **Proven on Windows** — run 40316051982. Dependency graph re-verified locally: `cargo fetch` resolves 405 crates, `tauri 2.12.5` |
 | Windows installers | **Built, unsigned, not yet smoke-tested** — see `BUILD-EVIDENCE.md` |
@@ -60,7 +60,7 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 90 tests, no crates.io needed
+cargo test --offline --workspace          # 92 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)

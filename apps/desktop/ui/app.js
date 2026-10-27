@@ -56,6 +56,7 @@ async function boot() {
     setBadge('desktop shell · local only', 'ok');
     await loadDevice();
     await loadRuntime();
+    await loadModels();
     await loadProjects();
   } catch (err) {
     setBadge('shell error', 'bad');
@@ -367,6 +368,79 @@ async function loadCheckpoints(projectId) {
   }
 }
 
+// Local model management.
+//
+// Kavach never downloads weights: the licence gate and the hash check exist so that a file
+// the user already has can be adopted safely. Both are enforced in Rust, not here.
+async function loadModels() {
+  const disk = el('disk-line');
+  if (!disk) return;
+  try {
+    const usage = await call('disk_usage', { path: state.workspace || '.' });
+    disk.textContent =
+      'Disk: ' + human(usage.availableBytes) + ' free of ' + human(usage.totalBytes) +
+      ' — enough for a model up to ' + human(usage.availableBytes * 0.8) + ' at 80% of free space.';
+  } catch (err) {
+    disk.textContent = 'Disk space unavailable: ' + err.message;
+  }
+}
+
+async function installModel(event) {
+  event.preventDefault();
+  const form = el('install-form');
+  const errorEl = el('install-error');
+  const resultEl = el('install-result');
+  errorEl.hidden = true;
+  resultEl.textContent = '';
+
+  const data = new FormData(form);
+  if (!data.get('accepted')) {
+    errorEl.hidden = false;
+    errorEl.textContent = 'The licence must be accepted before a model is installed.';
+    return;
+  }
+
+  try {
+    const result = await call('install_model', {
+      modelId: String(data.get('modelId')),
+      sourceFile: String(data.get('source')),
+      destinationDir: (state.workspace || '.') + '/models',
+      expectedSha256: String(data.get('sha256')),
+      licenceAccepted: true,
+      licenceName: String(data.get('licenceName')),
+    });
+    resultEl.textContent =
+      'Installed ' + result.modelId + ' (' + human(result.sizeBytes) + ') at ' + result.path +
+      ' — sha256 ' + result.sha256.slice(0, 16) + '…';
+    form.reset();
+    await loadModels();
+  } catch (err) {
+    errorEl.hidden = false;
+    errorEl.textContent = 'Install refused: ' + err.message;
+  }
+}
+
+async function verifyModel(event) {
+  event.preventDefault();
+  const data = new FormData(el('verify-form'));
+  const resultEl = el('verify-result');
+  const path = String(data.get('path'));
+  const expected = String(data.get('expected') || '').trim();
+  try {
+    const digest = await call('hash_file', { path });
+    if (!expected) {
+      resultEl.textContent = 'sha256 ' + digest.sha256;
+      return;
+    }
+    const check = await call('verify_model', { path, expectedSha256: expected });
+    resultEl.textContent = check.matches
+      ? 'Matches the expected digest.'
+      : 'DOES NOT match the expected digest.';
+  } catch (err) {
+    resultEl.textContent = 'Cannot read that file: ' + err.message;
+  }
+}
+
 async function loadProjects() {
   try {
     const result = await call('list_projects', { workspace: state.workspace });
@@ -412,4 +486,6 @@ el('export').addEventListener('click', exportProject);
 el('preview-req').addEventListener('click', showRequirements);
 el('checkpoint').addEventListener('click', checkpointNow);
 el('rescan').addEventListener('click', rescan);
+el('install-form').addEventListener('submit', installModel);
+el('verify-form').addEventListener('submit', verifyModel);
 boot();

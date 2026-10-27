@@ -77,6 +77,50 @@
         </details>
       </section>
 
+      <section class="card" id="models-card">
+        <h2>Local models</h2>
+        <p class="muted">
+          Kavach does not download models. Point it at a file you already have, and it checks
+          the licence and the hash before the file is used.
+        </p>
+        <p class="muted" id="disk-line">Checking disk space…</p>
+
+        <form id="install-form">
+          <label for="model-source">Model file on this machine</label>
+          <input id="model-source" name="source" type="text" placeholder="/path/to/model.gguf" required />
+
+          <label for="model-id">Model id</label>
+          <input id="model-id" name="modelId" type="text" placeholder="qwen2.5-coder-7b-q4" required />
+
+          <label for="model-sha">Expected SHA-256</label>
+          <input id="model-sha" name="sha256" type="text" placeholder="64 hex characters" required />
+
+          <label for="model-licence">Licence name</label>
+          <input id="model-licence" name="licenceName" type="text" placeholder="Apache-2.0" required />
+
+          <label class="checkbox">
+            <input id="model-accept" name="accepted" type="checkbox" required />
+            I have read and accept this model's licence
+          </label>
+
+          <button type="submit" class="primary">Install model</button>
+          <p id="install-error" class="error" role="alert" hidden></p>
+          <p id="install-result" class="muted"></p>
+        </form>
+
+        <details>
+          <summary>Verify an existing file</summary>
+          <form id="verify-form">
+            <label for="verify-path">File path</label>
+            <input id="verify-path" name="path" type="text" required />
+            <label for="verify-sha">Expected SHA-256</label>
+            <input id="verify-sha" name="expected" type="text" />
+            <button type="submit">Hash and verify</button>
+            <p id="verify-result" class="muted"></p>
+          </form>
+        </details>
+      </section>
+
       <section class="card">
         <h2>Projects</h2>
         <ul id="projects" class="tight"></ul>

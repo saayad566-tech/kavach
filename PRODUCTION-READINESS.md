@@ -41,6 +41,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
 | 10a | A user can reopen previous work | **Yes** | Project rows are clickable: reopening restores the project directory, checkpoints and file tree. Before this, only the project just built was reachable |
 | 10b | Checkpoints on demand | **Yes** | `create_checkpoint` command + button; builds still checkpoint automatically |
+| 10d | Install and verify a local model | **Yes** | Model panel: licence acceptance and SHA-256 are enforced in Rust before a file is adopted; disk space is reported before installing. Nothing is downloaded |
 | 10c | Inspect and re-scan a project | **Yes** | File reader (`read_project_file`, path-guarded) and a "re-scan for secrets" button |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
 | 11 | Crash safety | **Yes** | Index written temp-then-rename, the previous copy is kept as `index.tsv.bak`, a corrupt primary falls back to it automatically, and the format carries a version header. `tests/crash_safety.rs` SIGKILLs the writer six times and asserts coherence |
@@ -52,6 +53,19 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 ---
 
 ## What changed in this pass
+
+### Every registered command now has a destination
+
+Seven commands had no caller. Four now drive a model panel (install, verify, hash, disk
+space); the remaining three are declared internal with a reason and enforced by
+`scripts/check-command-surface.py`, which fails the build if a command is added without either
+a caller or an exemption. "Wire it up later" can no longer be forgotten.
+
+The model panel is the completion of a claim the product was making without the means to
+support it: Kavach said it could run local models, but there was no way to install one. The
+panel takes a file you already have, refuses it without an accepted licence, refuses it on a
+hash mismatch, and writes nothing in either case — all three asserted at the command boundary.
+
 
 ### Features that existed but nothing could reach
 

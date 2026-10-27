@@ -81,6 +81,15 @@ window.__TAURI__ = {
         return { ok: true, files: ['package.json', 'src/server.js', 'src/analytics.js', 'README.md'] };
       case 'export_project':
         return { ok: true, destination: '/tmp/out', files: 14, bytes: 4096 };
+      case 'disk_usage':
+        return { ok: true, totalBytes: 536870912000, availableBytes: 300647710720 };
+      case 'install_model':
+        return { ok: true, modelId: args && args.modelId, path: '/tmp/ws/models/model.gguf',
+                 sizeBytes: 4404019200, sha256: 'a'.repeat(64), licenceName: 'Apache-2.0' };
+      case 'hash_file':
+        return { ok: true, sha256: 'b'.repeat(64) };
+      case 'verify_model':
+        return { ok: true, matches: true };
       case 'list_checkpoints':
         return { ok: true, checkpoints: [{ id: 'cp-1', label: 'before build', treeHash: 'abcdef0123456789', createdAt: '3' }] };
       case 'restore_checkpoint':
@@ -158,6 +167,11 @@ const checks = {
   'checkpoint action is reachable': /id="checkpoint"/.test(dom) && !/id="checkpoint"[^>]*disabled/.test(dom),
   'rescan action is reachable': /id="rescan"/.test(dom) && !/id="rescan"[^>]*disabled/.test(dom),
   'files are listed': /src\/analytics\.js/.test(text),
+  'model panel explains the licence gate': /checks\s+the licence and the hash/.test(text),
+  'disk space is reported': /Disk: .* free of .*/.test(text),
+  'model install form is present': /id="model-source"/.test(dom) && /id="model-sha"/.test(dom),
+  'licence acceptance is required': /id="model-accept"[^>]*required/.test(dom),
+  'model file input is labelled': /<label for="model-source"/.test(dom),
   'page declares a language': /<html[^>]+lang="en"/.test(dom),
   'skip link present': /class="skip-link"[^>]*href="#main"/.test(dom),
   'status region is announced': /role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/.test(dom),

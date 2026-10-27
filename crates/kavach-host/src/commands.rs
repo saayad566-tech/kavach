@@ -535,6 +535,79 @@ mod tests {
     }
 
     #[test]
+    fn install_model_command_enforces_the_licence_and_the_hash() {
+        // The UI relies on these two error kinds, so they are asserted at the command
+        // boundary rather than only inside the install module.
+        let ws = tmp("install-cmd");
+        let source = ws.join("model.bin");
+        std::fs::write(&source, b"weights").unwrap();
+        let dest = ws.join("models");
+        std::fs::create_dir_all(&dest).unwrap();
+        let digest = match hash(&source.to_string_lossy()) {
+            json if json.contains("sha256") => {
+                let start = json.find("\"sha256\":\"").unwrap() + 10;
+                let end = json[start..].find('"').unwrap() + start;
+                json[start..end].to_string()
+            }
+            other => panic!("hash failed: {other}"),
+        };
+
+        // No licence: refused, and nothing written.
+        let refused = install_model(
+            "test-model",
+            &source.to_string_lossy(),
+            &dest.to_string_lossy(),
+            &digest,
+            false,
+            "Apache-2.0",
+        );
+        assert!(refused.contains("licence-not-accepted"), "{refused}");
+        assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0, "a refused install must write nothing");
+
+        // Wrong hash: refused, and still nothing written.
+        let wrong = install_model(
+            "test-model",
+            &source.to_string_lossy(),
+            &dest.to_string_lossy(),
+            &"0".repeat(64),
+            true,
+            "Apache-2.0",
+        );
+        assert!(wrong.contains("hash-mismatch"), "{wrong}");
+        assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0, "a mismatched install must write nothing");
+
+        // Correct hash and accepted licence: installed and verifiable.
+        let installed = install_model(
+            "test-model",
+            &source.to_string_lossy(),
+            &dest.to_string_lossy(),
+            &digest,
+            true,
+            "Apache-2.0",
+        );
+        assert!(installed.contains("\"ok\":true"), "{installed}");
+        assert!(installed.contains("Apache-2.0"), "{installed}");
+
+        let path = dest.join("model.bin");
+        let verified = verify_model(&path.to_string_lossy(), &digest);
+        assert!(verified.contains("\"matches\":true"), "{verified}");
+        let mismatched = verify_model(&path.to_string_lossy(), &"1".repeat(64));
+        assert!(mismatched.contains("\"matches\":false"), "{mismatched}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn disk_usage_command_reports_space() {
+        let ws = tmp("disk-cmd");
+        let usage = disk_usage(&ws.to_string_lossy());
+        assert!(usage.contains("availableBytes"), "{usage}");
+        assert!(usage.contains("totalBytes"), "{usage}");
+        let unknown = disk_usage("/definitely/not/here");
+        assert!(unknown.contains("\"ok\":false"), "{unknown}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
     fn list_projects_reports_each_project_directory() {
         let ws = tmp("listdirs");
         create_project(&ws.to_string_lossy(), "Build a web app to manage invoices");
