@@ -305,6 +305,30 @@ pub fn security_scan(workspace: &str, project_id: &str) -> String {
         .raw("findings", &format!("[{}]", findings.join(","))))
 }
 
+/// `create_checkpoint(workspace, project_id, label)` — snapshot the tree on demand.
+///
+/// Builds take a checkpoint automatically before they write anything. This lets the user
+/// take one at any other moment, which is the difference between "I can undo the last build"
+/// and "I can undo whatever I am about to try".
+pub fn create_checkpoint(workspace: &str, project_id: &str, label: &str) -> String {
+    let mut store = Store::load(Path::new(workspace));
+    if !store.project_dir(project_id).is_dir() {
+        return err(&format!("unknown project {project_id}"), "not-found");
+    }
+    let label = if label.trim().is_empty() { "manual checkpoint" } else { label.trim() };
+    match store.checkpoint(project_id, label) {
+        Ok(entry) => match store.save() {
+            Ok(()) => ok(Json::object()
+                .str("id", &entry.id)
+                .str("label", &entry.label)
+                .str("treeHash", &entry.tree_hash)
+                .num("createdAt", entry.created_at.parse::<i64>().unwrap_or(0))),
+            Err(e) => err(&format!("checkpoint written but the index could not be saved: {e}"), "store-error"),
+        },
+        Err(e) => err(&e, "checkpoint-failed"),
+    }
+}
+
 /// `export_project(workspace, project_id, destination)` — copy the work out.
 pub fn export_project(workspace: &str, project_id: &str, destination: &str) -> String {
     match do_export(Path::new(workspace), project_id, destination) {
@@ -375,6 +399,9 @@ pub fn list_projects(workspace: &str) -> String {
                 .str("createdAt", &p.created_at)
                 .num("verifiedTasks", p.tasks_verified.len() as i64)
                 .num("unverifiedTasks", p.tasks_unverified.len() as i64)
+                // The UI needs the root to read and scan files; deriving it there would
+                // duplicate the store's layout in the view.
+                .str("rootPath", &store.project_dir(&p.id).to_string_lossy())
                 .finish()
         })
         .collect();
@@ -504,6 +531,45 @@ mod tests {
         let out = security_scan(&ws.to_string_lossy(), &project_id);
         assert!(out.contains("\"rule\":\"eval\""), "{out}");
         assert!(out.contains("\"passed\":"), "{out}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn list_projects_reports_each_project_directory() {
+        let ws = tmp("listdirs");
+        create_project(&ws.to_string_lossy(), "Build a web app to manage invoices");
+        let listed = list_projects(&ws.to_string_lossy());
+        assert!(listed.contains("\"rootPath\":"), "{listed}");
+        assert!(listed.contains("projects"), "the path should point inside the workspace");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn create_checkpoint_command_snapshots_on_demand() {
+        let ws = tmp("cp-cmd");
+        let created = create_project(&ws.to_string_lossy(), "Build a web app to manage invoices");
+        let start = created.find("\"id\":\"").unwrap() + 6;
+        let end = created[start..].find('"').unwrap() + start;
+        let project_id = created[start..end].to_string();
+
+        let dir = ws.join("projects").join(&project_id);
+        std::fs::write(dir.join("note.txt"), "before").unwrap();
+
+        let first = create_checkpoint(&ws.to_string_lossy(), &project_id, "before experimenting");
+        assert!(first.contains("\"ok\":true"), "{first}");
+        assert!(first.contains("treeHash"), "{first}");
+
+        // A second one in the same second must still get its own id.
+        let second = create_checkpoint(&ws.to_string_lossy(), &project_id, "again");
+        assert!(second.contains("\"ok\":true"), "{second}");
+        assert_ne!(first, second);
+
+        // And it must be restorable.
+        let listed = list_checkpoints(&ws.to_string_lossy(), &project_id);
+        assert!(listed.matches("\"label\":\"before experimenting\"").count() >= 1, "{listed}");
+
+        let unknown = create_checkpoint(&ws.to_string_lossy(), "nope", "x");
+        assert!(unknown.contains("not-found"), "{unknown}");
         std::fs::remove_dir_all(&ws).ok();
     }
 

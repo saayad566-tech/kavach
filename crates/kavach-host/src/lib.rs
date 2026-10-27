@@ -50,4 +50,5 @@ pub const COMMAND_NAMES: &[&str] = &[
     "probe_runtime",
     "security_scan",
     "export_project",
+    "create_checkpoint",
 ];

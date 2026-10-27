@@ -79,6 +79,9 @@ by amount", "amount by category" for the bundled placeholder dataset, and the eq
 whatever dataset you drop in. If there is no numeric field it says so rather than showing an
 empty table.
 
+The panel also links to the dataset as CSV (`/api/analysis/export.csv`) and appends a trend
+line for the numeric field it found — "amount is rising (slope 1.561, r² 0.00)".
+
 The bundled `data/sample.csv` is a **domain-neutral placeholder** (`name, category, amount,
 quantity, date`), not a fixture for one kind of application. Replace it with your own CSV and
 the panel adapts.

@@ -113,6 +113,11 @@ pub fn export_project(workspace: String, project_id: String, destination: String
 }
 
 #[tauri::command]
+pub fn create_checkpoint(workspace: String, project_id: String, label: String) -> String {
+    host::create_checkpoint(&workspace, &project_id, &label)
+}
+
+#[tauri::command]
 pub fn list_projects(workspace: String) -> String {
     host::list_projects(&workspace)
 }

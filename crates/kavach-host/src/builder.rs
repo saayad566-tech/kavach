@@ -661,6 +661,20 @@ async function loadAnalysis() {
       return [label, item[numericField]];
     }));
 
+    // A trend is worth showing for any numeric field: it answers "is this going up?".
+    try {
+      const trend = await api('/api/analysis/trend?field=' + encodeURIComponent(numericField));
+      if (trend.trend) {
+        const direction = { up: 'rising', down: 'falling', flat: 'flat' }[trend.trend.direction] || trend.trend.direction;
+        sourceEl.textContent +=
+          ' \u00b7 ' + numericField + ' is ' + direction +
+          ' (slope ' + trend.trend.slope.toFixed(3) +
+          ', r\u00b2 ' + trend.trend.r2.toFixed(2) + ')';
+      }
+    } catch {
+      // A trend is a bonus; its absence must not break the panel.
+    }
+
     if (categoryField) {
       document.getElementById('group-title').textContent = numericField + ' by ' + categoryField;
       const groups = await api(
@@ -896,6 +910,7 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
         <div><h3 id="top-title">Top rows</h3><table id="top-rows"><tbody></tbody></table></div>
         <div><h3 id="group-title">Grouped totals</h3><table id="group-totals"><tbody></tbody></table></div>
       </div>
+      <p><a id="export-csv" href="/api/analysis/export.csv" download="dataset.csv">Download this dataset as CSV</a></p>
       <p id="analysis-error" class="error" role="alert" hidden></p>
     </section>
 

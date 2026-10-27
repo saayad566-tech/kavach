@@ -38,6 +38,7 @@ static COMMANDS: &[&str] = &[
     "probe_runtime",
     "security_scan",
     "export_project",
+    "create_checkpoint",
     "list_projects",
     "list_checkpoints",
     "restore_checkpoint",

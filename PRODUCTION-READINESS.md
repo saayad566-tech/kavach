@@ -39,6 +39,9 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 7 | Secrets are not committed or generated | **Yes** | `security.rs` scans every generated project; a high-severity finding fails verification |
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
+| 10a | A user can reopen previous work | **Yes** | Project rows are clickable: reopening restores the project directory, checkpoints and file tree. Before this, only the project just built was reachable |
+| 10b | Checkpoints on demand | **Yes** | `create_checkpoint` command + button; builds still checkpoint automatically |
+| 10c | Inspect and re-scan a project | **Yes** | File reader (`read_project_file`, path-guarded) and a "re-scan for secrets" button |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
 | 11 | Crash safety | **Yes** | Index written temp-then-rename, the previous copy is kept as `index.tsv.bak`, a corrupt primary falls back to it automatically, and the format carries a version header. `tests/crash_safety.rs` SIGKILLs the writer six times and asserts coherence |
 | 12 | Upgrade path | **No** | No updater configured. Tauri's updater keys are free (ed25519), so this is work, not cost |
@@ -49,6 +52,23 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 ---
 
 ## What changed in this pass
+
+### Features that existed but nothing could reach
+
+Ten host commands were implemented and tested with no way to invoke them from the UI. Four
+now have one: on-demand checkpoints, a security re-scan, a file reader, and a file listing.
+The others (`run_command`, the raw file writers) stay unexposed deliberately — a UI that can
+run arbitrary commands is the opposite of least privilege.
+
+The bigger gap was that a user could only act on the project they had *just* built: restart
+the app and all previous work became unreachable. Project rows are now clickable and restore
+the directory, checkpoints and file tree.
+
+### Generated applications
+
+Every generated app now links to its dataset as CSV and shows a trend line for its numeric
+field, so the analysis the pipeline computes is visible rather than only available over HTTP.
+
 
 ### Resource limits on generated code
 

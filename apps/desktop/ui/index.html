@@ -41,6 +41,8 @@
           <button id="build" class="primary">Build it</button>
           <button id="preview-req">Show requirements</button>
           <button id="export" disabled>Export project…</button>
+          <button id="checkpoint" disabled>Checkpoint now</button>
+          <button id="rescan" disabled>Re-scan for secrets</button>
           <span id="busy" class="muted" role="status" aria-live="polite"></span>
         </div>
         <p id="error" class="error" role="alert" hidden></p>
@@ -67,6 +69,8 @@
         <ul id="limitations" class="tight"></ul>
         <h3>Files</h3>
         <ul id="files" class="tight files"></ul>
+        <p class="muted" id="file-hint">Select a file to read it.</p>
+        <pre id="file-view" class="file-view" hidden></pre>
         <details>
           <summary>Checkpoints</summary>
           <ul id="checkpoints" class="tight"></ul>

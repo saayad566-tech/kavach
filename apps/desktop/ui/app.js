@@ -7,7 +7,7 @@
 const invoke = window.__TAURI__?.invoke;
 
 const el = (id) => document.getElementById(id);
-const state = { workspace: null, projectId: null, runtime: null };
+const state = { workspace: null, projectId: null, projectDir: null, runtime: null };
 
 function setBadge(text, tone) {
   const badge = el('host-badge');
@@ -162,6 +162,7 @@ async function build() {
   try {
     const project = await call('create_project', { workspace: state.workspace, prompt: el('prompt').value });
     state.projectId = project.id;
+    state.projectDir = project.rootPath || null;
     const result = await call('build_project', {
       workspace: state.workspace,
       projectId: project.id,
@@ -170,6 +171,10 @@ async function build() {
     });
     renderReport(result.report);
     el('export').disabled = false;
+    el('checkpoint').disabled = false;
+    el('rescan').disabled = false;
+    // Show the tree as it exists on disk, not just the files the report mentioned.
+    await loadProjectFiles();
     await loadProjects();
     await loadCheckpoints(project.id);
   } catch (err) {
@@ -222,10 +227,113 @@ function renderReport(report) {
   el('files').replaceChildren(
     ...report.files.map((file) => {
       const li = document.createElement('li');
-      li.textContent = `${file.path}  ·  ${file.origin}`;
+      const button = document.createElement('button');
+      button.className = 'link';
+      button.textContent = `${file.path}  ·  ${file.origin}`;
+      button.addEventListener('click', () => openFile(file.path));
+      li.append(button);
       return li;
     }),
   );
+}
+
+// Take a checkpoint at a moment of the user's choosing, not only before a build.
+async function checkpointNow() {
+  if (!state.projectId) return;
+  showError('');
+  try {
+    const label = window.prompt('Label for this checkpoint', 'manual checkpoint');
+    if (label === null) return;
+    const created = await call('create_checkpoint', {
+      workspace: state.workspace,
+      projectId: state.projectId,
+      label,
+    });
+    el('busy').textContent = `checkpoint ${created.id} saved`;
+    await loadCheckpoints(state.projectId);
+  } catch (err) {
+    showError(`Checkpoint failed: ${err.message}`);
+  }
+}
+
+// Re-run the security scan after the user has changed files.
+async function rescan() {
+  if (!state.projectId) return;
+  showError('');
+  try {
+    const report = await call('security_scan', {
+      workspace: state.workspace,
+      projectId: state.projectId,
+    });
+    const security = el('security');
+    security.textContent = `${report.summary} — ${report.passed ? 'passed' : 'FAILED'}`;
+    security.className = report.passed ? 'muted' : 'error';
+    el('busy').textContent = `re-scanned ${report.filesScanned} file(s)`;
+    if (!report.passed) {
+      showError(report.findings.map((f) => `${f.path}:${f.line} ${f.rule} (${f.severity})`).join('; '));
+    }
+  } catch (err) {
+    showError(`Scan failed: ${err.message}`);
+  }
+}
+
+// Read one file from the project. The webview has no filesystem permission, so this goes
+// through the path-guarded host command.
+async function openFile(path) {
+  if (!state.projectId) return;
+  try {
+    const result = await call('read_project_file', {
+      root: state.projectDir,
+      relPath: path,
+    });
+    const view = el('file-view');
+    view.hidden = false;
+    view.textContent = result.content.length > 20000
+      ? `${result.content.slice(0, 20000)}\n\n… truncated`
+      : result.content;
+    el('file-hint').textContent = `Reading ${path}`;
+  } catch (err) {
+    showError(`Cannot read ${path}: ${err.message}`);
+  }
+}
+
+// Reopen a project that already exists. Without this the app could only act on the project
+// it had just built, so restarting the application lost access to all previous work.
+async function selectProject(project) {
+  state.projectId = project.id;
+  state.projectDir = project.rootPath || null;
+  showError('');
+  el('busy').textContent = `opened ${project.name}`;
+  for (const id of ['export', 'checkpoint', 'rescan']) {
+    const button = el(id);
+    if (button) button.disabled = false;
+  }
+  await loadCheckpoints(project.id);
+  await loadProjectFiles();
+}
+
+// The files panel works without a build: list the tree through the path-guarded command.
+async function loadProjectFiles() {
+  if (!state.projectId || !state.projectDir) return;
+  try {
+    const listing = await call('list_files', { root: state.projectDir });
+    const card = el('report-card');
+    if (card.hidden) card.hidden = false;
+    el('files').replaceChildren(
+      ...(listing.files || []).slice(0, 200).map((path) => {
+        const li = document.createElement('li');
+        const button = document.createElement('button');
+        button.className = 'link';
+        button.textContent = path;
+        button.addEventListener('click', () => openFile(path));
+        li.append(button);
+        return li;
+      }),
+    );
+    el('file-hint').textContent = `${(listing.files || []).length} file(s) — select one to read it.`;
+  } catch (err) {
+    showError(`Cannot list files: ${err.message}`);
+  }
 }
 
 async function loadCheckpoints(projectId) {
@@ -266,7 +374,11 @@ async function loadProjects() {
     el('projects').replaceChildren(
       ...result.projects.map((project) => {
         const li = document.createElement('li');
-        li.textContent = `${project.name} · ${project.appKind} · ${project.verifiedTasks} verified / ${project.unverifiedTasks} unverified`;
+        const open = document.createElement('button');
+        open.className = 'link';
+        open.textContent = `${project.name} · ${project.appKind} · ${project.verifiedTasks} verified / ${project.unverifiedTasks} unverified`;
+        open.addEventListener('click', () => selectProject(project));
+        li.append(open);
         return li;
       }),
     );
@@ -298,4 +410,6 @@ async function exportProject() {
 el('build').addEventListener('click', build);
 el('export').addEventListener('click', exportProject);
 el('preview-req').addEventListener('click', showRequirements);
+el('checkpoint').addEventListener('click', checkpointNow);
+el('rescan').addEventListener('click', rescan);
 boot();
