@@ -613,36 +613,65 @@ function fillTable(tableId, rows) {
   }
 }
 
-// The analysis panel reads the local dataset through the pipeline. If the dataset is
-// missing the panel says so rather than showing an empty table and no reason.
+// The analysis panel reads the local dataset through the pipeline.
+//
+// It must work for any application Kavach generates, so it does not name a single field:
+// it inspects the inferred schema, picks the first numeric field and the first
+// low-cardinality text field, and labels the tables accordingly. A generated invoice app
+// and a generated inventory app both get a sensible panel with no code changes.
 async function loadAnalysis() {
   const sourceEl = document.getElementById('analysis-source');
   const errorEl = document.getElementById('analysis-error');
   if (!sourceEl) return;
   try {
     const overview = await api('/api/analysis/overview');
-    const numeric = Object.entries(overview.numeric)[0];
+    const rows = overview.rows;
     sourceEl.textContent =
-      overview.source.split('/').pop() + ' — ' + overview.rows + ' rows, ' +
+      overview.source.split('/').pop() + ' — ' + rows + ' rows, ' +
       Object.keys(overview.schema).length + ' fields, quality ' +
       (overview.quality.ok ? 'clean' : overview.quality.issues.length + ' issue(s)');
 
-    if (numeric) {
-      const [field, stats] = numeric;
-      fillTable('summary', [
-        [field + ' count', stats.count],
-        ['min', stats.min],
-        ['median', stats.median],
-        ['mean', stats.mean === null ? null : stats.mean.toFixed(2)],
-        ['max', stats.max],
-      ]);
+    const fields = Object.entries(overview.schema);
+    const numericField = (fields.find(([, meta]) => meta.type === 'number') || [])[0];
+    // A categorical field is text with few distinct values relative to the row count.
+    const categoryField = (fields.find(([, meta]) =>
+      meta.type === 'string' && meta.distinct > 1 && meta.distinct <= Math.max(2, rows / 2)
+    ) || [])[0];
+
+    if (!numericField) {
+      document.getElementById('summary-title').textContent = 'Summary';
+      fillTable('summary', [['numeric fields', 'none in this dataset']]);
+      return;
     }
 
-    const top = await api('/api/analysis/top?field=volume&n=5');
-    fillTable('top-volume', top.items.map((item) => [item.symbol || item.name || '—', item.volume]));
+    const stats = overview.numeric[numericField];
+    document.getElementById('summary-title').textContent = 'Summary of ' + numericField;
+    fillTable('summary', [
+      ['count', stats.count],
+      ['min', stats.min],
+      ['median', stats.median],
+      ['mean', stats.mean === null ? null : stats.mean.toFixed(2)],
+      ['max', stats.max],
+    ]);
 
-    const groups = await api('/api/analysis/group?key=sector&field=volume&how=sum');
-    fillTable('by-sector', groups.groups.map((group) => [group.key, group.value]));
+    document.getElementById('top-title').textContent = 'Largest by ' + numericField;
+    const top = await api('/api/analysis/top?field=' + encodeURIComponent(numericField) + '&n=5');
+    fillTable('top-rows', top.items.map((item) => {
+      const label = categoryField ? item[categoryField] : (item.name || item.id || '—');
+      return [label, item[numericField]];
+    }));
+
+    if (categoryField) {
+      document.getElementById('group-title').textContent = numericField + ' by ' + categoryField;
+      const groups = await api(
+        '/api/analysis/group?key=' + encodeURIComponent(categoryField) +
+        '&field=' + encodeURIComponent(numericField) + '&how=sum'
+      );
+      fillTable('group-totals', groups.groups.map((group) => [group.key, group.value]));
+    } else {
+      document.getElementById('group-title').textContent = 'Grouped totals';
+      fillTable('group-totals', [['categorical field', 'none in this dataset']]);
+    }
   } catch (err) {
     errorEl.hidden = false;
     errorEl.textContent = 'Analysis unavailable: ' + err.message;
@@ -863,9 +892,9 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
       <h2 id="analysis-title">Data analysis</h2>
       <p id="analysis-source" class="muted">Reading the dataset…</p>
       <div class="grid">
-        <div><h3>Summary</h3><table id="summary"><tbody></tbody></table></div>
-        <div><h3>Largest by volume</h3><table id="top-volume"><tbody></tbody></table></div>
-        <div><h3>By sector</h3><table id="by-sector"><tbody></tbody></table></div>
+        <div><h3 id="summary-title">Summary</h3><table id="summary"><tbody></tbody></table></div>
+        <div><h3 id="top-title">Top rows</h3><table id="top-rows"><tbody></tbody></table></div>
+        <div><h3 id="group-title">Grouped totals</h3><table id="group-totals"><tbody></tbody></table></div>
       </div>
       <p id="analysis-error" class="error" role="alert" hidden></p>
     </section>
@@ -1384,6 +1413,44 @@ mod tests {
             assert!(paths.contains(&required), "missing {required}");
         }
         assert!(guard(&files).is_empty(), "guard found {:?}", guard(&files));
+    }
+
+    #[test]
+    fn the_generated_app_is_domain_neutral() {
+        // A generated application must not name fields from one domain. An earlier version
+        // hardcoded "volume" and "sector" in the analysis panel and shipped a stock dataset,
+        // so every invoice or patient app asked the API for fields it did not have.
+        let reqs = extract_requirements("Build a web app to manage invoices and clients");
+        let files = scaffold(&reqs);
+        // Test fixtures may use any field names; what must stay neutral is the code and data
+        // the application actually ships.
+        let all: String = files
+            .iter()
+            .filter(|f| !f.path.starts_with("test/"))
+            .map(|f| f.content.clone())
+            .collect();
+        for forbidden in ["volume", "sector", "symbol"] {
+            assert!(
+                !all.contains(forbidden),
+                "the scaffold mentions {forbidden:?}, which only makes sense for one domain"
+            );
+        }
+        // And the panel must discover its fields rather than assume them.
+        assert!(all.contains("Summary of "), "the summary heading should be built at runtime");
+        assert!(all.contains("schema"), "the panel should read the inferred schema");
+    }
+
+    #[test]
+    fn the_sample_dataset_is_a_placeholder_not_a_domain() {
+        let reqs = extract_requirements("Build a web app to track patients and appointments");
+        let files = scaffold(&reqs);
+        let sample = files
+            .iter()
+            .find(|f| f.path == "data/sample.csv")
+            .expect("a generated app should ship a sample dataset");
+        let header = sample.content.lines().next().unwrap_or("");
+        assert_eq!(header, "name,category,amount,quantity,date");
+        assert!(sample.content.lines().count() >= 10, "the sample should have rows to analyse");
     }
 
     #[test]

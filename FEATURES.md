@@ -72,9 +72,16 @@ distinguish "no data" from "the answer is zero". That distinction is tested.
 
 ## UI
 
-The generated page renders an analysis panel above the records table: the dataset summary,
-the top five by volume, and the totals by sector — all fetched from the API above, with an
-error banner if the dataset is missing.
+The generated page renders an analysis panel above the records table. It names no fields of
+its own: it reads the inferred schema, picks the first numeric field and the first
+low-cardinality text field, and labels the tables from those — "Summary of amount", "Largest
+by amount", "amount by category" for the bundled placeholder dataset, and the equivalent for
+whatever dataset you drop in. If there is no numeric field it says so rather than showing an
+empty table.
+
+The bundled `data/sample.csv` is a **domain-neutral placeholder** (`name, category, amount,
+quantity, date`), not a fixture for one kind of application. Replace it with your own CSV and
+the panel adapts.
 
 ## CRUD (unchanged)
 

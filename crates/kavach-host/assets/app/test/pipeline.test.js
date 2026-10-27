@@ -130,21 +130,24 @@ test('runPipeline runs every stage end to end', () => {
 });
 
 test('readDataset loads the bundled sample file', async () => {
+  // The bundled dataset is deliberately domain-neutral: it is a placeholder for whatever
+  // the generated application is about, so nothing here assumes invoices, orders or stocks.
   const dataset = await readDataset(join(here, '..', 'data', 'sample.csv'));
-  assert.ok(dataset.rows >= 15, `expected the sample rows, got ${dataset.rows}`);
-  assert.equal(dataset.schema.close.type, 'number');
-  assert.equal(dataset.schema.symbol.type, 'string');
-  assert.equal(typeof dataset.records[0].close, 'number');
-  assert.equal(dataset.records[0].symbol, 'AAA');
+  assert.ok(dataset.rows >= 10, `expected the sample rows, got ${dataset.rows}`);
+  assert.equal(dataset.schema.amount.type, 'number');
+  assert.equal(dataset.schema.category.type, 'string');
+  assert.equal(dataset.schema.date.type, 'date');
+  assert.equal(typeof dataset.records[0].amount, 'number');
+  assert.ok(dataset.records[0].name.length > 0);
 });
 
 test('the sample dataset supports the analysis functions', async () => {
   const { records } = await readDataset(join(here, '..', 'data', 'sample.csv'));
   const { groupAggregate, meanField, correlation, timeBucket } = await import('../src/analytics.js');
 
-  const bySymbol = groupAggregate(records, 'symbol', 'volume', 'sum');
-  assert.equal(bySymbol.length, 3);
-  assert.ok(meanField(records, 'close') > 0);
-  assert.ok(correlation(records, 'close', 'volume') !== undefined);
+  const byCategory = groupAggregate(records, 'category', 'amount', 'sum');
+  assert.ok(byCategory.length >= 2, `expected categories, got ${byCategory.length}`);
+  assert.ok(meanField(records, 'amount') > 0);
+  assert.ok(correlation(records, 'amount', 'quantity') !== undefined);
   assert.equal(timeBucket(records, 'date', 'month')[0].bucket, '2026-01');
 });

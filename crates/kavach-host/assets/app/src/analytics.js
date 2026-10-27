@@ -4,7 +4,7 @@
 // filesystem or the network. That is what makes them testable and what keeps the app
 // honest about doing its work on this machine.
 //
-// A "record" is a plain object, e.g. { date: '2026-01-01', symbol: 'ABC', close: 101.5 }.
+// A "record" is a plain object, e.g. { date: '2026-01-01', category: 'alpha', amount: 101.5 }.
 // Fields are addressed by name. Anything that cannot be computed returns null rather than
 // NaN, so a caller can tell "no data" from "the answer is zero".
 
