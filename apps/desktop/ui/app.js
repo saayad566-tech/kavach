@@ -176,6 +176,7 @@ async function build() {
     el('rescan').disabled = false;
     // Show the tree as it exists on disk, not just the files the report mentioned.
     await loadProjectFiles();
+    await loadMemory();
     await loadProjects();
     await loadCheckpoints(project.id);
   } catch (err) {
@@ -311,6 +312,7 @@ async function selectProject(project) {
   }
   await loadCheckpoints(project.id);
   await loadProjectFiles();
+  await loadMemory();
 }
 
 // The files panel works without a build: list the tree through the path-guarded command.
@@ -438,6 +440,60 @@ async function verifyModel(event) {
       : 'DOES NOT match the expected digest.';
   } catch (err) {
     resultEl.textContent = 'Cannot read that file: ' + err.message;
+  }
+}
+
+// The ledger is the product's memory: what was done, in what state, on what evidence.
+async function loadMemory() {
+  const summary = el('memory-summary');
+  if (!summary) return;
+  if (!state.projectId) {
+    summary.textContent = 'Open a project to see its ledger.';
+    return;
+  }
+  try {
+    const memory = await call('project_memory', {
+      workspace: state.workspace,
+      projectId: state.projectId,
+    });
+    const tasks = memory.tasks || [];
+    const notes = memory.notes || [];
+    const counts = tasks.reduce((acc, task) => {
+      acc[task.state] = (acc[task.state] || 0) + 1;
+      return acc;
+    }, {});
+    const summaryText = Object.entries(counts).map(([state, n]) => n + ' ' + state).join(' · ');
+    summary.textContent = tasks.length
+      ? tasks.length + ' task(s): ' + summaryText
+      : 'No tasks recorded for this project yet.';
+
+    document.querySelector('#tasks tbody').replaceChildren(
+      ...tasks.map((task) => {
+        const tr = document.createElement('tr');
+        const title = document.createElement('td');
+        title.textContent = task.title;
+        const stateCell = document.createElement('td');
+        const pill = document.createElement('span');
+        pill.className = 'pill ' + (task.state === 'verified' ? 'ok' : task.state === 'failed' ? 'bad' : '');
+        pill.textContent = task.state;
+        stateCell.append(pill);
+        const evidence = document.createElement('td');
+        evidence.className = 'muted';
+        evidence.textContent = (task.evidence || []).join('; ') || '—';
+        tr.append(title, stateCell, evidence);
+        return tr;
+      }),
+    );
+
+    el('notes').replaceChildren(
+      ...notes.map((note) => {
+        const li = document.createElement('li');
+        li.textContent = note.kind + ': ' + note.text + (note.evidence ? ' (' + note.evidence + ')' : '');
+        return li;
+      }),
+    );
+  } catch (err) {
+    summary.textContent = 'Cannot read the ledger: ' + err.message;
   }
 }
 

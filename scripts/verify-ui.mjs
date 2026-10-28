@@ -90,6 +90,15 @@ window.__TAURI__ = {
         return { ok: true, sha256: 'b'.repeat(64) };
       case 'verify_model':
         return { ok: true, matches: true };
+      case 'project_memory':
+        return { ok: true,
+                 tasks: [
+                   { id: 'stage:verify', title: 'Pipeline stage: verify', state: 'verified',
+                     acceptance: ['the stage reports a result'], evidence: ['1 test file(s) passed under the permission model'], updatedAt: '1' },
+                   { id: 'T-07', title: 'Plan task T-07', state: 'needs-verification',
+                     acceptance: ['verify passes'], evidence: [], updatedAt: '1' },
+                 ],
+                 notes: [{ id: 'n-1', kind: 'change', text: 'Build: 14 files', evidence: 'no findings', createdAt: '1' }] };
       case 'list_checkpoints':
         return { ok: true, checkpoints: [{ id: 'cp-1', label: 'before build', treeHash: 'abcdef0123456789', createdAt: '3' }] };
       case 'restore_checkpoint':
@@ -167,6 +176,9 @@ const checks = {
   'checkpoint action is reachable': /id="checkpoint"/.test(dom) && !/id="checkpoint"[^>]*disabled/.test(dom),
   'rescan action is reachable': /id="rescan"/.test(dom) && !/id="rescan"[^>]*disabled/.test(dom),
   'files are listed': /src\/analytics\.js/.test(text),
+  'ledger shows task states': /2 task\(s\):/.test(text) && /needs-verification/.test(text),
+  'ledger shows evidence': /passed under the permission model/.test(text),
+  'notes are shown': /change: Build: 14 files/.test(text),
   'model panel explains the licence gate': /checks\s+the licence and the hash/.test(text),
   'disk space is reported': /Disk: .* free of .*/.test(text),
   'model install form is present': /id="model-source"/.test(dom) && /id="model-sha"/.test(dom),

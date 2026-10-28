@@ -42,6 +42,7 @@ pub fn run() {
             commands::security_scan,
             commands::export_project,
             commands::create_checkpoint,
+            commands::project_memory,
             commands::list_projects,
             commands::list_checkpoints,
             commands::restore_checkpoint,

@@ -29,13 +29,83 @@ pub struct ProjectEntry {
     pub tasks_unverified: Vec<String>,
 }
 
+/// The states a task can be in.
+///
+/// The brief requires eight, and requires that "verified" is reachable only with evidence:
+/// generating code is not evidence, and neither is an agent claiming success.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TaskState {
+    Planned,
+    Ready,
+    InProgress,
+    Blocked,
+    Failed,
+    NeedsVerification,
+    Verified,
+    Cancelled,
+}
+
+impl TaskState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskState::Planned => "planned",
+            TaskState::Ready => "ready",
+            TaskState::InProgress => "in-progress",
+            TaskState::Blocked => "blocked",
+            TaskState::Failed => "failed",
+            TaskState::NeedsVerification => "needs-verification",
+            TaskState::Verified => "verified",
+            TaskState::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse(text: &str) -> TaskState {
+        match text {
+            "ready" => TaskState::Ready,
+            "in-progress" => TaskState::InProgress,
+            "blocked" => TaskState::Blocked,
+            "failed" => TaskState::Failed,
+            "verified" => TaskState::Verified,
+            "cancelled" => TaskState::Cancelled,
+            // Anything unrecognised is treated as needing verification rather than as done:
+            // a corrupt state must never read as success.
+            _ => TaskState::NeedsVerification,
+        }
+    }
+}
+
+/// One durable task record.
+pub struct TaskEntry {
+    pub id: String,
+    pub project_id: String,
+    pub title: String,
+    pub state: TaskState,
+    pub acceptance: Vec<String>,
+    pub depends_on: Vec<String>,
+    pub evidence: Vec<String>,
+    pub updated_at: String,
+}
+
+/// Kinds of memory note. These mirror the categories the brief lists: decisions, lessons,
+/// bugs, limitations and changes.
+pub struct NoteEntry {
+    pub id: String,
+    pub project_id: String,
+    pub kind: String,
+    pub text: String,
+    pub evidence: String,
+    pub created_at: String,
+}
+
 pub struct Store {
     pub workspace: PathBuf,
     pub projects: Vec<ProjectEntry>,
+    pub tasks: Vec<TaskEntry>,
+    pub notes: Vec<NoteEntry>,
 }
 
 /// Seconds since the epoch, for human-facing timestamps.
-fn now() -> String {
+pub fn now() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
@@ -80,7 +150,43 @@ fn tree_hash(files: &[(String, String)]) -> String {
 /// which still load — the header is how a future version can migrate rather than guess.
 pub const INDEX_HEADER: &str = "# kavach-index v1";
 
+fn split_list(text: &str) -> Vec<String> {
+    text.split([';', ','])
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 impl Store {
+    /// Record or update a task. Returns an error when a transition would claim success
+    /// without evidence — the rule the brief states, enforced rather than documented.
+    pub fn upsert_task(&mut self, task: TaskEntry) -> Result<(), String> {
+        if task.state == TaskState::Verified && task.evidence.is_empty() {
+            return Err(format!(
+                "task {} cannot be verified without evidence: generating code is not proof",
+                task.id
+            ));
+        }
+        match self.tasks.iter_mut().find(|t| t.project_id == task.project_id && t.id == task.id) {
+            Some(existing) => *existing = task,
+            None => self.tasks.push(task),
+        }
+        Ok(())
+    }
+
+    pub fn add_note(&mut self, note: NoteEntry) {
+        self.notes.push(note);
+    }
+
+    pub fn tasks_for(&self, project_id: &str) -> Vec<&TaskEntry> {
+        self.tasks.iter().filter(|t| t.project_id == project_id).collect()
+    }
+
+    pub fn notes_for(&self, project_id: &str) -> Vec<&NoteEntry> {
+        self.notes.iter().filter(|n| n.project_id == project_id).collect()
+    }
+
     fn index_path(workspace: &Path) -> PathBuf {
         workspace.join("index.tsv")
     }
@@ -89,10 +195,12 @@ impl Store {
         workspace.join("index.tsv.bak")
     }
 
-    /// Parse an index body. Returns the projects and how many lines were recognisable, so a
-    /// caller can tell "empty store" from "corrupt file".
-    fn parse(text: &str) -> (Vec<ProjectEntry>, usize) {
+    /// Parse an index body. Returns the projects, tasks, notes and how many lines were
+    /// recognisable, so a caller can tell "empty store" from "corrupt file".
+    fn parse(text: &str) -> (Vec<ProjectEntry>, usize, Vec<TaskEntry>, Vec<NoteEntry>) {
         let mut projects: Vec<ProjectEntry> = Vec::new();
+        let mut tasks: Vec<TaskEntry> = Vec::new();
+        let mut notes: Vec<NoteEntry> = Vec::new();
         let mut valid = 0usize;
         {
             for line in text.lines() {
@@ -114,6 +222,30 @@ impl Store {
                         tasks_unverified: Vec::new(),
                         });
                     }
+                    Some("T") if fields.len() >= 9 => {
+                        valid += 1;
+                        tasks.push(TaskEntry {
+                            project_id: fields[1].into(),
+                            id: fields[2].into(),
+                            state: TaskState::parse(fields[3]),
+                            title: fields[4].into(),
+                            acceptance: split_list(fields[5]),
+                            depends_on: split_list(fields[6]),
+                            evidence: split_list(fields[7]),
+                            updated_at: fields[8].into(),
+                        });
+                    }
+                    Some("N") if fields.len() >= 7 => {
+                        valid += 1;
+                        notes.push(NoteEntry {
+                            project_id: fields[1].into(),
+                            id: fields[2].into(),
+                            kind: fields[3].into(),
+                            text: fields[4].into(),
+                            evidence: fields[5].into(),
+                            created_at: fields[6].into(),
+                        });
+                    }
                     Some("C") if fields.len() >= 6 => {
                         if let Some(project) = projects.iter_mut().find(|p| p.id == fields[1]) {
                             project.checkpoints.push(CheckpointEntry {
@@ -128,7 +260,7 @@ impl Store {
                 }
             }
         }
-        (projects, valid)
+        (projects, valid, tasks, notes)
     }
 
     /// Load the index, falling back to the backup when the primary is unreadable.
@@ -142,18 +274,18 @@ impl Store {
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            let (projects, valid) = Self::parse(&text);
+            let (projects, valid, tasks, notes) = Self::parse(&text);
             let meaningful = text
                 .lines()
                 .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
                 .count();
             if valid > 0 || meaningful == 0 {
-                return Store { workspace: workspace.to_path_buf(), projects };
+                return Store { workspace: workspace.to_path_buf(), projects, tasks, notes };
             }
             // The file has content but nothing parsed: try the backup instead.
             recovered.push(path);
         }
-        Store { workspace: workspace.to_path_buf(), projects: Vec::new() }
+        Store { workspace: workspace.to_path_buf(), projects: Vec::new(), tasks: Vec::new(), notes: Vec::new() }
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -179,6 +311,30 @@ impl Store {
                     cp.created_at
                 ));
             }
+        }
+        for task in &self.tasks {
+            out.push_str(&format!(
+                "T\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                task.project_id,
+                task.id,
+                task.state.as_str(),
+                clean(&task.title),
+                clean(&task.acceptance.join(";")),
+                task.depends_on.join(","),
+                clean(&task.evidence.join(";")),
+                task.updated_at
+            ));
+        }
+        for note in &self.notes {
+            out.push_str(&format!(
+                "N\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                note.project_id,
+                note.id,
+                clean(&note.kind),
+                clean(&note.text),
+                clean(&note.evidence),
+                note.created_at
+            ));
         }
         // Write to a temporary file and rename, so a crash mid-write cannot leave a
         // half-written index. Rename is atomic within a filesystem on every platform we

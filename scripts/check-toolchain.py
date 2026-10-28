@@ -20,9 +20,9 @@ import sys
 
 # (name, minimum, why it is needed, how to install it)
 REQUIRED = [
-    ("rustc", (1, 75), "compiles the host crate",
+    ("rustc", (1, 77), "compiles the host crate",
      "https://rustup.rs  (or: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)"),
-    ("cargo", (1, 75), "builds and tests the workspace", "installed with rustc via rustup"),
+    ("cargo", (1, 77), "builds and tests the workspace", "installed with rustc via rustup"),
     ("node", (20, 0), "runs generated applications, and hosts the sandbox for generated tests",
      "https://nodejs.org  (Node 20 or newer is required: the permission model arrived in 20)"),
     ("python3", (3, 9), "runs the offline verification scripts", "https://www.python.org/downloads/"),

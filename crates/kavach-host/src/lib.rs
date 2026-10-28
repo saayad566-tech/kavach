@@ -51,4 +51,5 @@ pub const COMMAND_NAMES: &[&str] = &[
     "security_scan",
     "export_project",
     "create_checkpoint",
+    "project_memory",
 ];

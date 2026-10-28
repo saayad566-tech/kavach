@@ -359,11 +359,145 @@ pub fn build_project(workspace: &str, project_id: &str, prompt: &str, use_local_
     let report = builder::build_project_with(project_id, &dir, prompt, found.as_ref());
     let _ = store.record_outcome(project_id, report.verified.clone(), report.unverified.clone());
 
+    // Persist what actually happened. The brief requires a durable ledger in which a task is
+    // verified only against evidence, so each stage becomes a task whose evidence is the
+    // stage's own detail line — and the store refuses a "verified" state with no evidence.
+    let now = crate::store::now();
+    let verify_evidence = report
+        .stages
+        .iter()
+        .find(|stage| stage.stage == "verify")
+        .map(|stage| stage.detail.clone())
+        .unwrap_or_else(|| "the build produced no verify stage".to_string());
+    for stage in &report.stages {
+        let state = if stage.ok {
+            crate::store::TaskState::Verified
+        } else {
+            crate::store::TaskState::Failed
+        };
+        let task = crate::store::TaskEntry {
+            id: format!("stage:{}", stage.stage),
+            project_id: project_id.to_string(),
+            title: format!("Pipeline stage: {}", stage.stage),
+            state,
+            acceptance: vec!["the stage reports a result and its detail".to_string()],
+            depends_on: Vec::new(),
+            evidence: if stage.detail.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![stage.detail.clone()]
+            },
+            updated_at: now.clone(),
+        };
+        let _ = store.upsert_task(task);
+    }
+
+    // Plan tasks carry their own acceptance criteria and the evidence that closed them.
+    for id in &report.verified {
+        let task = crate::store::TaskEntry {
+            id: id.clone(),
+            project_id: project_id.to_string(),
+            title: format!("Plan task {id}"),
+            state: crate::store::TaskState::Verified,
+            acceptance: vec!["the build's verify stage passes".to_string()],
+            depends_on: Vec::new(),
+            evidence: vec![format!("verify stage: {verify_evidence}")],
+            updated_at: now.clone(),
+        };
+        let _ = store.upsert_task(task);
+    }
+    for id in &report.unverified {
+        let task = crate::store::TaskEntry {
+            id: id.clone(),
+            project_id: project_id.to_string(),
+            title: format!("Plan task {id}"),
+            state: crate::store::TaskState::NeedsVerification,
+            acceptance: vec!["the build's verify stage passes".to_string()],
+            depends_on: Vec::new(),
+            evidence: Vec::new(),
+            updated_at: now.clone(),
+        };
+        let _ = store.upsert_task(task);
+    }
+
+    store.add_note(crate::store::NoteEntry {
+        id: format!("note-{now}"),
+        project_id: project_id.to_string(),
+        kind: "change".to_string(),
+        text: format!(
+            "Build: {} file(s), {} verified, {} unverified, checkpoint {}",
+            report.files.len(),
+            report.verified.len(),
+            report.unverified.len(),
+            if checkpoint.is_empty() { "none" } else { &checkpoint }
+        ),
+        evidence: report.security_summary.clone(),
+        created_at: now.clone(),
+    });
+
+    // A failed verification is a lesson worth keeping, not a line in a log that scrolls away.
+    if !report.stages.iter().all(|stage| stage.ok) {
+        let failed: Vec<String> = report
+            .stages
+            .iter()
+            .filter(|stage| !stage.ok)
+            .map(|stage| format!("{}: {}", stage.stage, stage.detail))
+            .collect();
+        store.add_note(crate::store::NoteEntry {
+            id: format!("note-{now}-failure"),
+            project_id: project_id.to_string(),
+            kind: "lesson".to_string(),
+            text: "Build did not verify; nothing in this delivery is claimed to work.".to_string(),
+            evidence: failed.join("; "),
+            created_at: now,
+        });
+    }
+
+    let _ = store.save();
+
     let mut payload = report.to_json();
     // Splice the checkpoint id into the report object.
     payload.pop();
     payload.push_str(&format!(",\"checkpointId\":\"{}\"}}", crate::json::escape(&checkpoint)));
     ok(crate::json::Json::object().raw("report", &payload))
+}
+
+/// `project_memory(workspace, project_id)` — the durable ledger and notes for a project.
+pub fn project_memory(workspace: &str, project_id: &str) -> String {
+    let store = Store::load(Path::new(workspace));
+    if !store.project_dir(project_id).is_dir() {
+        return err(&format!("unknown project {project_id}"), "not-found");
+    }
+    let tasks: Vec<String> = store
+        .tasks_for(project_id)
+        .iter()
+        .map(|t| {
+            Json::object()
+                .str("id", &t.id)
+                .str("title", &t.title)
+                .str("state", t.state.as_str())
+                .raw("acceptance", &format!("[{}]", t.acceptance.iter().map(|a| format!("\"{}\"", crate::json::escape(a))).collect::<Vec<_>>().join(",")))
+                .raw("evidence", &format!("[{}]", t.evidence.iter().map(|e| format!("\"{}\"", crate::json::escape(e))).collect::<Vec<_>>().join(",")))
+                .str("updatedAt", &t.updated_at)
+                .finish()
+        })
+        .collect();
+    let notes: Vec<String> = store
+        .notes_for(project_id)
+        .iter()
+        .map(|n| {
+            Json::object()
+                .str("id", &n.id)
+                .str("kind", &n.kind)
+                .str("text", &n.text)
+                .str("evidence", &n.evidence)
+                .str("createdAt", &n.created_at)
+                .finish()
+        })
+        .collect();
+    ok(Json::object()
+        .raw("tasks", &format!("[{}]", tasks.join(",")))
+        .raw("notes", &format!("[{}]", notes.join(","))))
 }
 
 /// `create_project(workspace, prompt)`.
@@ -604,6 +738,100 @@ mod tests {
         assert!(usage.contains("totalBytes"), "{usage}");
         let unknown = disk_usage("/definitely/not/here");
         assert!(unknown.contains("\"ok\":false"), "{unknown}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn a_real_build_writes_the_ledger() {
+        // The ledger is only worth having if a build fills it. This runs the actual pipeline
+        // and asserts the stages landed as tasks with evidence.
+        let ws = tmp("ledger-build");
+        let created = create_project(&ws.to_string_lossy(), "Build a web app to manage invoices");
+        let start = created.find("\"id\":\"").unwrap() + 6;
+        let end = created[start..].find('"').unwrap() + start;
+        let project_id = created[start..end].to_string();
+
+        let built = build_project(&ws.to_string_lossy(), &project_id, "Build a web app to manage invoices", false);
+        assert!(built.contains("\"ok\":true"), "the build should succeed: {built}");
+
+        let memory = project_memory(&ws.to_string_lossy(), &project_id);
+        assert!(memory.contains("stage:verify"), "the verify stage should be a task: {memory}");
+        assert!(memory.contains("\"state\":\"verified\""), "{memory}");
+        assert!(memory.contains("permission model"), "evidence should record how tests ran: {memory}");
+        assert!(memory.contains("\"kind\":\"change\""), "a change note should be recorded: {memory}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn a_task_cannot_be_verified_without_evidence() {
+        // The brief's rule, enforced in the store rather than trusted to a caller.
+        let ws = tmp("ledger-evidence");
+        let mut store = Store::load(&ws);
+        let mut task = crate::store::TaskEntry {
+            id: "T-01".into(),
+            project_id: "p-1".into(),
+            title: "Scaffold".into(),
+            state: crate::store::TaskState::Verified,
+            acceptance: vec!["tree matches".into()],
+            depends_on: Vec::new(),
+            evidence: Vec::new(),
+            updated_at: "1".into(),
+        };
+        assert!(store.upsert_task(task).is_err(), "verified without evidence must be refused");
+
+        let mut with_evidence = crate::store::TaskEntry {
+            id: "T-01".into(),
+            project_id: "p-1".into(),
+            title: "Scaffold".into(),
+            state: crate::store::TaskState::Verified,
+            acceptance: vec!["tree matches".into()],
+            depends_on: Vec::new(),
+            evidence: vec!["node --test exited 0".into()],
+            updated_at: "2".into(),
+        };
+        assert!(store.upsert_task(with_evidence).is_ok());
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn the_ledger_survives_a_reload_and_reports_through_the_command() {
+        let ws = tmp("ledger-reload");
+        let created = create_project(&ws.to_string_lossy(), "Build a web app to manage invoices");
+        let start = created.find("\"id\":\"").unwrap() + 6;
+        let end = created[start..].find('"').unwrap() + start;
+        let project_id = created[start..end].to_string();
+
+        let mut store = Store::load(&ws);
+        store
+            .upsert_task(crate::store::TaskEntry {
+                id: "T-01".into(),
+                project_id: project_id.clone(),
+                title: "Scaffold".into(),
+                state: crate::store::TaskState::Verified,
+                acceptance: vec!["tree matches".into()],
+                depends_on: Vec::new(),
+                evidence: vec!["14 files written".into()],
+                updated_at: "1".into(),
+            })
+            .unwrap();
+        store.add_note(crate::store::NoteEntry {
+            id: "n-1".into(),
+            project_id: project_id.clone(),
+            kind: "decision".into(),
+            text: "chose a JSON store over SQLite".into(),
+            evidence: "no dependency available".into(),
+            created_at: "1".into(),
+        });
+        store.save().unwrap();
+
+        let memory = project_memory(&ws.to_string_lossy(), &project_id);
+        assert!(memory.contains("\"state\":\"verified\""), "{memory}");
+        assert!(memory.contains("14 files written"), "{memory}");
+        assert!(memory.contains("chose a JSON store"), "{memory}");
+        assert!(memory.contains("\"kind\":\"decision\""), "{memory}");
+
+        let unknown = project_memory(&ws.to_string_lossy(), "nope");
+        assert!(unknown.contains("not-found"), "{unknown}");
         std::fs::remove_dir_all(&ws).ok();
     }
 

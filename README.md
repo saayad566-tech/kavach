@@ -19,7 +19,7 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 98 tests, zero dependencies |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 101 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
 | Data pipeline in generated apps | **Working** — CSV/JSON ingest, schema inference, coercion, validation, dedupe, join: 10 functions |
 | Analysis in generated apps | **Working** — 28 tested functions: descriptive stats, distribution, grouping, time series, correlation, outliers, querying, CSV export. See `FEATURES.md` |
@@ -27,9 +27,10 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 | Sandbox for generated tests | **Working** — filesystem confined to the project, child processes and network denied (net, tls, dns, http, https, dgram, fetch) |
 | Resource limits on generated code | **Working** — CPU-time and per-file write caps enforced by the kernel, so grandchildren are covered too |
 | Project store durability | **Working** — versioned index, previous copy kept, automatic recovery if the primary is corrupt |
+| Task ledger and memory | **Working** — eight states, acceptance criteria, evidence-gated verification, notes for changes and failures |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
 | Model-authored application code | **Working, with a safety rule** — the model may add files; they are kept only if the project still passes its own tests, and rolled back otherwise |
-| Desktop UI (static HTML/JS) | **Working** — 18 of 21 commands reachable (3 internal by design), 24 render and accessibility checks; reopen projects, checkpoint on demand, read files, re-scan, install and verify models |
+| Desktop UI (static HTML/JS) | **Working** — 19 of 22 commands reachable (3 internal by design), 27 render and accessibility checks; reopen projects, checkpoint on demand, read files, re-scan, install and verify models |
 | Export to a plain source tree | **Working** |
 | Tauri shell compiles | **Proven on Windows** — run 40316051982. Dependency graph re-verified locally: `cargo fetch` resolves 405 crates, `tauri 2.12.5` |
 | Windows installers | **Built, unsigned, not yet smoke-tested** — see `BUILD-EVIDENCE.md` |
@@ -61,7 +62,7 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 98 tests, no crates.io needed
+cargo test --offline --workspace          # 101 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)

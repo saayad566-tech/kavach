@@ -41,6 +41,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
 | 10a | A user can reopen previous work | **Yes** | Project rows are clickable: reopening restores the project directory, checkpoints and file tree. Before this, only the project just built was reachable |
 | 10b | Checkpoints on demand | **Yes** | `create_checkpoint` command + button; builds still checkpoint automatically |
+| 10e | Durable task ledger and memory | **Yes** | Eight task states with acceptance criteria and evidence; a verified state is refused by the store when evidence is empty. Notes record changes and failures. Persisted in the index, surviving restarts |
 | 10d | Install and verify a local model | **Yes** | Model panel: licence acceptance and SHA-256 are enforced in Rust before a file is adopted; disk space is reported before installing. Nothing is downloaded |
 | 10c | Inspect and re-scan a project | **Yes** | File reader (`read_project_file`, path-guarded) and a "re-scan for secrets" button |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
@@ -53,6 +54,28 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 ---
 
 ## What changed in this pass
+
+### The memory the brief asks for, not two flat lists
+
+Section 8 of the brief requires a durable ledger with eight task states, acceptance criteria,
+evidence, and notes — and states that "a task cannot become verified complete merely because
+code was generated or an agent claimed success". The implementation had two lists,
+`tasks_verified` and `tasks_unverified`.
+
+The store now holds real task records (planned, ready, in-progress, blocked, failed,
+needs-verification, verified, cancelled) with acceptance criteria, dependencies and evidence,
+plus notes typed as decision, lesson, bug, limitation or change. `upsert_task` **refuses** a
+verified state with no evidence, so the rule is enforced rather than documented.
+
+Every build writes the ledger as it runs: each pipeline stage becomes a task whose evidence is
+that stage's own detail line, each plan task is marked verified or needs-verification against
+the verify stage, and a change note records what happened. A failed build leaves a lesson note
+with the failing stages as its evidence. An integration test runs a real build and asserts the
+ledger came out populated, so this cannot regress into a schema nobody writes to.
+
+Unknown task states parse as `needs-verification`, never as verified: a corrupt index must not
+read as success.
+
 
 ### The sandbox depended on a version nobody checked
 
