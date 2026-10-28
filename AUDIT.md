@@ -153,6 +153,26 @@ have compiled. Reading the fetched source found it; no compiler was needed.
 **Lesson recorded rather than hidden:** a 403 from a HEAD request is not evidence that a host is
 blocked, and "blocked" was load-bearing for several design decisions.
 
+## 6c. Correction: Wasmtime was the wrong answer
+
+The audit recorded that sandboxing generated code "needs Wasmtime", and repeated it across
+several passes. Generated applications are JavaScript; Wasmtime runs WebAssembly. The tool
+could not have solved the problem it was named for.
+
+The correct mechanism was Node's own permission model, which was already installed:
+
+| Check | Result |
+|---|---|
+| `fs.readFileSync('/etc/hostname')` under the model | **ERR_ACCESS_DENIED** |
+| `execSync('cat /etc/hostname')` with `--allow-child-process` | **ESCAPED** — the flag defeats the model |
+| Each test file run directly, no child-process grant | 42/42 pass, escape denied |
+
+So the design is: run each test file in its own process under the model, never grant
+`--allow-child-process`, and confine the filesystem to the project plus the temp directory.
+
+**Lesson recorded rather than hidden:** naming a technology is not the same as checking that it
+fits the problem, and "needs X" survived several passes without anyone testing X.
+
 ## 7. What is still not true
 
 1. **No installer corresponds to this commit.** The binaries on record were built from

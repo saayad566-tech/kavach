@@ -35,7 +35,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 3 | Installer exists | **Yes** | NSIS `.exe` and WiX `.msi`, checksums in `BUILD-EVIDENCE.md` |
 | 4 | Installer has been installed and exercised | **No** | No Windows machine here. `scripts/smoke-test-windows.ps1` automates 11 checks and prompts for 8 |
 | 5 | Binaries are code-signed | **Partly** | Free self-signed route implemented (`scripts/make-self-signed-cert.ps1`) for internal use; public distribution still needs a paid certificate, which is a business decision |
-| 6 | Generated code is sandboxed | **Partly** | Allow-list, wall-clock timeout, process-group kill, **kernel-enforced CPU-time and per-file-write limits** (applied in `pre_exec`, so grandchildren are covered), and a path guard. Still no WASM or container isolation — that remains the largest gap, but a runaway build can no longer burn the CPU indefinitely or fill the disk |
+| 6 | Generated code is sandboxed | **Yes, with one stated gap** | Tests run inside Node's permission model: filesystem reads and writes are confined to the project and the OS temp directory, and spawning a child process is denied. On top of that: an allow-list, wall-clock timeout, process-group kill, kernel-enforced CPU-time and per-file-write limits, and a path guard. **Not covered:** Node 20's permission model does not restrict network access |
 | 7 | Secrets are not committed or generated | **Yes** | `security.rs` scans every generated project; a high-severity finding fails verification |
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
@@ -53,6 +53,28 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 ---
 
 ## What changed in this pass
+
+### The sandbox is real, and it is not Wasmtime
+
+Earlier passes recorded "needs Wasmtime" as the fix for unsandboxed generated code. That was
+the wrong tool: generated applications are JavaScript, and Wasmtime cannot run JavaScript.
+The right mechanism was already on the machine.
+
+`node --experimental-permission` confines a process to an explicit filesystem allow-list.
+Each generated test file now runs under it, with reads and writes limited to the project and
+the OS temp directory. Three tests prove it rather than assert it: a test that reads
+`/etc/hostname` fails, a test that shells out fails, and an ordinary test that writes its own
+scratch files still passes.
+
+One finding is worth recording. The obvious implementation — `node --test` with
+`--allow-child-process`, because the runner spawns a child per file — is **not a sandbox**.
+Node's own warning says the flag "could invalidate the permission model", and it does: with
+it, a test spawned `cat /etc/hostname` and read the result. Running each test file directly
+keeps everything in one process, which is why the grant stays meaningful.
+
+The remaining hole is network access, which Node 20's model does not cover. It is stated in
+the report a build produces, not hidden in a document.
+
 
 ### Every registered command now has a destination
 

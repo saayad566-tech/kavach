@@ -1106,24 +1106,97 @@ fn request_manifest(runtime: &Runtime, reqs: &Requirements, existing: &[String])
     parse_manifest(&text, existing)
 }
 
-/// Run the generated project's own test command.
+/// Test files the generated project ships.
+fn test_files(project_dir: &Path) -> Vec<std::path::PathBuf> {
+    let dir = project_dir.join("test");
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.ends_with(".test.js") || name.ends_with(".test.mjs"))
+                        .unwrap_or(false)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    files
+}
+
+/// Run the generated project's own tests, inside Node's permission model.
+///
+/// Why not `node --test`: the test runner spawns a child process per file, and the only way
+/// to permit that is `--allow-child-process`, which Node's own documentation says "could
+/// invalidate the permission model". Tested here: with that flag a test can spawn a shell and
+/// read `/etc/hostname`, which defeats the point. Running each file directly keeps everything
+/// in one process, so the grant stays meaningful:
+///
+///   * reads and writes are confined to the project directory and the OS temp directory
+///   * spawning a child process is denied
+///
+/// The temp directory is granted because tests legitimately create scratch files there
+/// (`mkdtempSync(tmpdir())`), and a sandbox that breaks ordinary tests gets switched off.
+/// It does mean a test can read other processes' temp files; that is a smaller exposure than
+/// an unbounded filesystem and is stated rather than hidden.
+///
+/// Not covered: Node 20's permission model does not restrict network access. A generated test
+/// could still open a socket. That is stated in the report rather than papered over.
 fn run_tests(project_dir: &Path) -> (bool, String) {
-    match run(
-        "node",
-        &["--test".to_string()],
-        ExecOptions {
-            cwd: Some(project_dir.to_string_lossy().to_string()),
+    let dir = project_dir.to_string_lossy().to_string();
+    let files = test_files(project_dir);
+
+    if files.is_empty() {
+        return (false, "no test files found in test/".to_string());
+    }
+
+    let temp = std::env::temp_dir().to_string_lossy().to_string();
+    let mut ran = 0usize;
+    for file in &files {
+        let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("test");
+        let args = vec![
+            "--experimental-permission".to_string(),
+            format!("--allow-fs-read={dir}"),
+            format!("--allow-fs-write={dir}"),
+            format!("--allow-fs-read={temp}"),
+            format!("--allow-fs-write={temp}"),
+            file.to_string_lossy().to_string(),
+        ];
+        let options = ExecOptions {
+            cwd: Some(dir.clone()),
             timeout_ms: 120_000,
             max_output_bytes: 64 * 1024,
             cpu_seconds: Some(125),
             max_file_bytes: Some(crate::commands::MAX_FILE_BYTES),
-        },
-    ) {
-        Ok(out) if out.exit_code == 0 => (true, "node --test exited 0".to_string()),
-        Ok(out) if out.timed_out => (false, format!("node --test timed out (exit {EXIT_TIMEOUT})")),
-        Ok(out) => (false, format!("node --test exited {}: {}", out.exit_code, out.stderr.lines().next().unwrap_or(""))),
-        Err(e) => (false, format!("cannot execute tests: {e}")),
+        };
+        match run("node", &args, options) {
+            Ok(out) if out.exit_code == 0 => ran += 1,
+            Ok(out) if out.timed_out => {
+                return (false, format!("{name} timed out (exit {EXIT_TIMEOUT})"));
+            }
+            Ok(out) => {
+                let first = out
+                    .stderr
+                    .lines()
+                    .chain(out.stdout.lines())
+                    .find(|line| !line.trim().is_empty())
+                    .unwrap_or("no output");
+                return (false, format!("{name} exited {}: {first}", out.exit_code));
+            }
+            Err(e) => return (false, format!("cannot execute {name}: {e}")),
+        }
     }
+
+    (
+        true,
+        format!(
+            "{ran} test file(s) passed under Node's permission model \
+             (filesystem confined to the project, child processes denied)"
+        ),
+    )
 }
 
 /// Run the whole pipeline against a project directory.
@@ -1428,6 +1501,80 @@ mod tests {
             assert!(paths.contains(&required), "missing {required}");
         }
         assert!(guard(&files).is_empty(), "guard found {:?}", guard(&files));
+    }
+
+    #[test]
+    fn the_test_runner_confines_generated_tests_to_the_project() {
+        // A generated test that tries to read the machine's files must fail. Without this,
+        // "sandboxed" would be a claim about a flag rather than about behaviour.
+        let dir = std::env::temp_dir().join(format!("kavach-sbx-{}", std::process::id()));
+        let tests = dir.join("test");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("escape.test.js"),
+            "import test from 'node:test';\n\
+             import fs from 'node:fs';\n\
+             test('reads a file it should not', () => {\n\
+               const text = fs.readFileSync('/etc/hostname', 'utf8');\n\
+               if (!text) throw new Error('empty');\n\
+             });\n",
+        )
+        .unwrap();
+
+        let (ok, detail) = run_tests(&dir);
+        assert!(!ok, "the escape should have been refused, but the runner reported: {detail}");
+        assert!(
+            detail.contains("ERR_ACCESS_DENIED") || detail.contains("exited"),
+            "expected a denial, got: {detail}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_test_runner_denies_spawning_a_child_process() {
+        let dir = std::env::temp_dir().join(format!("kavach-spawn-{}", std::process::id()));
+        let tests = dir.join("test");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("spawn.test.js"),
+            "import test from 'node:test';\n\
+             import { execSync } from 'node:child_process';\n\
+             test('shells out', () => {\n\
+               execSync('cat /etc/hostname', { encoding: 'utf8' });\n\
+             });\n",
+        )
+        .unwrap();
+
+        let (ok, detail) = run_tests(&dir);
+        assert!(!ok, "spawning a child process should have been denied: {detail}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_test_runner_passes_an_honest_project() {
+        // The sandbox must not be so tight that ordinary tests stop working.
+        let dir = std::env::temp_dir().join(format!("kavach-ok-{}", std::process::id()));
+        let tests = dir.join("test");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("fine.test.js"),
+            "import test from 'node:test';\n\
+             import assert from 'node:assert/strict';\n\
+             import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';\n\
+             import { tmpdir } from 'node:os';\n\
+             import path from 'node:path';\n\
+             test('writes inside its own scratch space', () => {\n\
+               const d = mkdtempSync(path.join(tmpdir(), 'ok-'));\n\
+               writeFileSync(path.join(d, 'x.txt'), 'hi');\n\
+               assert.equal(readFileSync(path.join(d, 'x.txt'), 'utf8'), 'hi');\n\
+             });\n",
+        )
+        .unwrap();
+
+        let (ok, detail) = run_tests(&dir);
+        assert!(ok, "an ordinary test should pass: {detail}");
+        assert!(detail.contains("permission model"), "the detail should say how it ran: {detail}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
