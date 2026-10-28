@@ -414,6 +414,9 @@ const ANALYTICS_JS: &str = include_str!("../assets/app/src/analytics.js");
 const ANALYTICS_TEST_JS: &str = include_str!("../assets/app/test/analytics.test.js");
 const PIPELINE_TEST_JS: &str = include_str!("../assets/app/test/pipeline.test.js");
 const SAMPLE_CSV: &str = include_str!("../assets/app/data/sample.csv");
+/// Preloaded before every generated test file. Node 20's permission model has no network
+/// switch, so outbound access is denied by a preload instead.
+const NETWORK_GUARD: &str = include_str!("../assets/app/test-guard/network-guard.mjs");
 
 const SERVER_JS: &str = r#"import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -1143,8 +1146,9 @@ fn test_files(project_dir: &Path) -> Vec<std::path::PathBuf> {
 /// It does mean a test can read other processes' temp files; that is a smaller exposure than
 /// an unbounded filesystem and is stated rather than hidden.
 ///
-/// Not covered: Node 20's permission model does not restrict network access. A generated test
-/// could still open a socket. That is stated in the report rather than papered over.
+/// Network access is denied by a preload (`NETWORK_GUARD`), because Node 20's permission model
+/// has no switch for it. The preload blocks net, tls, dns, http, https, dgram and fetch. It is
+/// a preload rather than a kernel boundary, and is described that way in the report.
 fn run_tests(project_dir: &Path) -> (bool, String) {
     let dir = project_dir.to_string_lossy().to_string();
     let files = test_files(project_dir);
@@ -1184,6 +1188,14 @@ fn run_tests(project_dir: &Path) -> (bool, String) {
     }
 
     let temp = std::env::temp_dir().to_string_lossy().to_string();
+
+    // The guard lives in the temp directory so it never appears in the user's project.
+    let guard_path = std::env::temp_dir().join(format!("kavach-network-guard-{}.mjs", std::process::id()));
+    if let Err(e) = std::fs::write(&guard_path, NETWORK_GUARD) {
+        return (false, format!("cannot write the network guard: {e}"));
+    }
+    let guard_uri = format!("file://{}", guard_path.to_string_lossy().replace('\\', "/"));
+
     let mut ran = 0usize;
     for file in &files {
         let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("test");
@@ -1193,6 +1205,7 @@ fn run_tests(project_dir: &Path) -> (bool, String) {
             format!("--allow-fs-write={dir}"),
             format!("--allow-fs-read={temp}"),
             format!("--allow-fs-write={temp}"),
+            format!("--import={guard_uri}"),
             file.to_string_lossy().to_string(),
         ];
         let options = ExecOptions {
@@ -1220,11 +1233,12 @@ fn run_tests(project_dir: &Path) -> (bool, String) {
         }
     }
 
+    std::fs::remove_file(&guard_path).ok();
     (
         true,
         format!(
             "{ran} test file(s) passed under Node's permission model \
-             (filesystem confined to the project, child processes denied)"
+             (filesystem confined to the project, child processes and network denied)"
         ),
     )
 }
@@ -1542,6 +1556,47 @@ mod tests {
         let pkg = files.iter().find(|f| f.path == "package.json").unwrap();
         assert!(pkg.content.contains("\"engines\""), "{}", pkg.content);
         assert!(pkg.content.contains(">=20"), "{}", pkg.content);
+    }
+
+    #[test]
+    fn the_test_runner_denies_network_access() {
+        // Node 20's permission model has no network switch, so the preload has to carry this.
+        // Without the check, "no network" would be a claim about intent, not behaviour.
+        let dir = std::env::temp_dir().join(format!("kavach-net-{}", std::process::id()));
+        let tests = dir.join("test");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("network.test.js"),
+            "import test from 'node:test';\n\
+             import net from 'node:net';\n\
+             test('reaches out', () => {\n\
+               net.connect(80, 'example.com');\n\
+             });\n",
+        )
+        .unwrap();
+
+        let (ok, detail) = run_tests(&dir);
+        assert!(!ok, "network access should have been denied: {detail}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_test_runner_denies_fetch() {
+        let dir = std::env::temp_dir().join(format!("kavach-fetch-{}", std::process::id()));
+        let tests = dir.join("test");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("fetch.test.js"),
+            "import test from 'node:test';\n\
+             test('fetches', async () => {\n\
+               await fetch('http://example.com');\n\
+             });\n",
+        )
+        .unwrap();
+
+        let (ok, detail) = run_tests(&dir);
+        assert!(!ok, "fetch should have been denied: {detail}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

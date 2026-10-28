@@ -35,7 +35,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 3 | Installer exists | **Yes** | NSIS `.exe` and WiX `.msi`, checksums in `BUILD-EVIDENCE.md` |
 | 4 | Installer has been installed and exercised | **No** | No Windows machine here. `scripts/smoke-test-windows.ps1` automates 11 checks and prompts for 8 |
 | 5 | Binaries are code-signed | **Partly** | Free self-signed route implemented (`scripts/make-self-signed-cert.ps1`) for internal use; public distribution still needs a paid certificate, which is a business decision |
-| 6 | Generated code is sandboxed | **Yes, with one stated gap** | Tests run inside Node's permission model: filesystem reads and writes are confined to the project and the OS temp directory, and spawning a child process is denied. On top of that: an allow-list, wall-clock timeout, process-group kill, kernel-enforced CPU-time and per-file-write limits, and a path guard. **Not covered:** Node 20's permission model does not restrict network access |
+| 6 | Generated code is sandboxed | **Yes** | Tests run inside Node's permission model: filesystem reads and writes confined to the project and the OS temp directory, child processes denied. Network access is denied by a preload that blocks net, tls, dns, http, https, dgram and fetch — Node 20 has no switch for it. On top of that: an allow-list, wall-clock timeout, process-group kill, kernel-enforced CPU-time and per-file-write limits, and a path guard. The preload is a preload, not a kernel boundary |
 | 7 | Secrets are not committed or generated | **Yes** | `security.rs` scans every generated project; a high-severity finding fails verification |
 | 8 | No telemetry, no silent network egress | **Yes** | No HTTP client in the host except a loopback socket to the user's own model server; the policy engine denies the telemetry category outright |
 | 9 | Local model support | **Yes, bounded** | Discovery, generation and error handling tested against real sockets. The model writes notes and may add code; model code is kept only if the project's own tests still pass, and rolled back if they do not |
@@ -91,8 +91,15 @@ Node's own warning says the flag "could invalidate the permission model", and it
 it, a test spawned `cat /etc/hostname` and read the result. Running each test file directly
 keeps everything in one process, which is why the grant stays meaningful.
 
-The remaining hole is network access, which Node 20's model does not cover. It is stated in
-the report a build produces, not hidden in a document.
+The last hole was network access: Node 20's permission model has no switch for it, so a
+generated test could still open a socket. That is now closed by a preload
+(`assets/app/test-guard/network-guard.mjs`) that blocks `net`, `tls`, `dns`, `http`, `https`,
+`dgram` and the global `fetch` before the test file loads. Two tests prove it: a test calling
+`net.connect` fails, and a test calling `fetch` fails.
+
+It is a preload, not a kernel boundary — a determined test could reload a module and get past
+it. It stops ordinary code, which is what a generated test is, and the report says which of
+those two things it is.
 
 
 ### Every registered command now has a destination

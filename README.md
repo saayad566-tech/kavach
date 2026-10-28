@@ -19,12 +19,12 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 
 | Part | State |
 |---|---|
-| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 95 tests, zero dependencies |
+| Native host (probe, exec, path guard, SHA-256, model install, builder, store) | **Working** — 98 tests, zero dependencies |
 | Builder pipeline (requirements → plan → scaffold → security scan → verify → report) | **Working** — generates a project that passes its own `node --test`, and refuses to deliver one with a committed secret |
 | Data pipeline in generated apps | **Working** — CSV/JSON ingest, schema inference, coercion, validation, dedupe, join: 10 functions |
 | Analysis in generated apps | **Working** — 28 tested functions: descriptive stats, distribution, grouping, time series, correlation, outliers, querying, CSV export. See `FEATURES.md` |
 | Security scan of generated code | **Working** — high-severity findings fail verification |
-| Sandbox for generated tests | **Working** — Node's permission model: filesystem confined to the project, child processes denied. Network not covered |
+| Sandbox for generated tests | **Working** — filesystem confined to the project, child processes and network denied (net, tls, dns, http, https, dgram, fetch) |
 | Resource limits on generated code | **Working** — CPU-time and per-file write caps enforced by the kernel, so grandchildren are covered too |
 | Project store durability | **Working** — versioned index, previous copy kept, automatic recovery if the primary is corrupt |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
@@ -61,7 +61,7 @@ fails.
 Individually:
 
 ```bash
-cargo test --offline --workspace          # 95 tests, no crates.io needed
+cargo test --offline --workspace          # 98 tests, no crates.io needed
 python3 scripts/check-desktop-config.py   # icons, versions, capabilities, commands, workflows
 python3 scripts/check-ui-contract.py      # every UI call resolves to an implemented command
 node scripts/verify-ui.mjs                # renders the UI in headless Chromium (13 checks)
