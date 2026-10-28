@@ -27,6 +27,7 @@ run() {
 # code range; raise it where the shell allows. Harmless on a normal machine.
 ulimit -v unlimited 2>/dev/null || true
 
+run "toolchain preflight" python3 scripts/check-toolchain.py
 run "host tests (offline)" cargo test --offline --workspace
 run "desktop configuration and packaging" python3 scripts/check-desktop-config.py --verbose
 run "UI to command contract" python3 scripts/check-ui-contract.py

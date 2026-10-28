@@ -69,6 +69,22 @@ python3 scripts/check-test-coverage.py    # structural gate: every module tested
 python3 scripts/check-free.py             # zero-cost audit: no paid service or account
 ```
 
+## Toolchain
+
+| Tool | Minimum | Why |
+|---|---|---|
+| Rust | 1.75 | compiles the host crate; `rust-toolchain.toml` pins the channel |
+| Node | **20** | runs generated apps, and hosts the sandbox for generated tests |
+| Python | 3.9 | the offline verification scripts |
+| webkit2gtk-4.1 | — | Linux only, and only to build the desktop shell |
+
+`python3 scripts/check-toolchain.py` checks all of it and prints the install line for anything
+missing. Both build scripts run it first.
+
+Node 20 is not a soft requirement: generated tests run under Node's permission model, which
+arrived in 20. The builder refuses to verify a project on an older runtime rather than run
+generated code without the sandbox.
+
 ## Build
 
 Free, local, no CI required:

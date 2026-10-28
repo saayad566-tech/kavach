@@ -38,6 +38,8 @@ function Say([string]$Message) {
 
 # ---------------------------------------------------------------- prerequisites
 Say "1/5  Checking prerequisites"
+python scripts/check-toolchain.py
+if ($LASTEXITCODE -ne 0) { throw "a required tool is missing or too old (see above)" }
 foreach ($tool in @('cargo', 'node')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
         throw "$tool not found. Install Rust (https://rustup.rs) and Node 20+ (https://nodejs.org)."

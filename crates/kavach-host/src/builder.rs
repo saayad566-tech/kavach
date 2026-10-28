@@ -949,7 +949,7 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
     );
 
     let package_json = format!(
-        "{{\n  \"name\": \"{}\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {{ \"start\": \"node src/server.js\", \"test\": \"node --test\" }}\n}}\n",
+        "{{\n  \"name\": \"{}\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"engines\": {{ \"node\": \">=20\" }},\n  \"scripts\": {{ \"start\": \"node src/server.js\", \"test\": \"node --test\" }}\n}}\n",
         slug(&reqs.entities.first().cloned().unwrap_or_else(|| "app".into()))
     );
 
@@ -1151,6 +1151,36 @@ fn run_tests(project_dir: &Path) -> (bool, String) {
 
     if files.is_empty() {
         return (false, "no test files found in test/".to_string());
+    }
+
+    // The sandbox is Node's permission model, which arrived in Node 20. On an older runtime
+    // the flag is rejected and every test fails — safe, but with an error nobody can act on.
+    // Check the version explicitly so the guarantee is never silently absent.
+    match run(
+        "node",
+        &["--version".to_string()],
+        ExecOptions {
+            cwd: Some(dir.clone()),
+            timeout_ms: 10_000,
+            max_output_bytes: 4 * 1024,
+            cpu_seconds: Some(10),
+            max_file_bytes: Some(1024 * 1024),
+        },
+    ) {
+        Ok(out) => {
+            let version = out.stdout.trim().trim_start_matches('v').to_string();
+            let major: u32 = version.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
+            if major < 20 {
+                return (
+                    false,
+                    format!(
+                        "Node {version} is too old: generated tests run under the permission \
+                         model, which needs Node 20 or newer. Upgrade Node, then rebuild."
+                    ),
+                );
+            }
+        }
+        Err(e) => return (false, format!("cannot run node: {e}")),
     }
 
     let temp = std::env::temp_dir().to_string_lossy().to_string();
@@ -1501,6 +1531,17 @@ mod tests {
             assert!(paths.contains(&required), "missing {required}");
         }
         assert!(guard(&files).is_empty(), "guard found {:?}", guard(&files));
+    }
+
+    #[test]
+    fn the_generated_manifest_requires_node_20() {
+        // The sandbox needs Node 20. A generated project must say so, or it will be run on a
+        // runtime where the guarantee quietly does not exist.
+        let reqs = extract_requirements("Build a web app to manage invoices");
+        let files = scaffold(&reqs);
+        let pkg = files.iter().find(|f| f.path == "package.json").unwrap();
+        assert!(pkg.content.contains("\"engines\""), "{}", pkg.content);
+        assert!(pkg.content.contains(">=20"), "{}", pkg.content);
     }
 
     #[test]

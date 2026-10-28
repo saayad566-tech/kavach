@@ -1,4 +1,6 @@
 [workspace]
+# Declared for users, and checked by scripts/check-toolchain.py.
+rust-version = "1.75"
 resolver = "2"
 members = ["crates/kavach-host"]
 exclude = ["apps/desktop/src-tauri"]

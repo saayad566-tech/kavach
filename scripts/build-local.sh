@@ -22,7 +22,9 @@ done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
-command -v cargo >/dev/null || { echo "cargo not found. Install Rust: https://rustup.rs"; exit 1; }
+say "0/4  Toolchain preflight"
+python3 scripts/check-toolchain.py || exit 1
+
 command -v node  >/dev/null || { echo "node not found. Install Node 20+: https://nodejs.org"; exit 1; }
 
 say "1/4  Offline verification"

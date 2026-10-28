@@ -45,7 +45,7 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 | 10c | Inspect and re-scan a project | **Yes** | File reader (`read_project_file`, path-guarded) and a "re-scan for secrets" button |
 | 10 | Accessibility | **Partly** | Skip link, landmarks, labelled controls, `aria-live` status, visible focus, reduced-motion support, all asserted in `verify-ui.mjs`. No screen-reader or high-contrast testing |
 | 11 | Crash safety | **Yes** | Index written temp-then-rename, the previous copy is kept as `index.tsv.bak`, a corrupt primary falls back to it automatically, and the format carries a version header. `tests/crash_safety.rs` SIGKILLs the writer six times and asserts coherence |
-| 12 | Upgrade path | **No** | No updater configured. Tauri's updater keys are free (ed25519), so this is work, not cost |
+| 12 | Upgrade path | **No, deliberately** | No updater. An auto-updater phones home, which contradicts the product's core promise; the supported path is a manual install of a newer release over the old one, with data in the app-data directory untouched. Tauri's updater keys are free (ed25519) if you decide a network check is acceptable |
 | 13 | Documentation for operators | **Yes** | `WINDOWS-BUILD.md`, `BUILD-EVIDENCE.md`, `CI-EVIDENCE.md`, `README.md`, this file |
 | 14 | Licence compliance for bundled weights | **N/A yet** | No weights are bundled or downloaded by the host; the licence gate exists and is tested for when they are |
 | 15 | Privacy policy / terms | **No** | A product decision and a legal one, not something to invent here |
@@ -53,6 +53,25 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 ---
 
 ## What changed in this pass
+
+### The sandbox depended on a version nobody checked
+
+Generated tests run under Node's permission model. That model arrived in Node 20 — and nothing
+verified which Node was installed. On Node 18 the flag is rejected and every test fails, which
+is safe but unhelpful; the real risk is a runtime that accepts the flag and ignores it.
+
+The builder now reads `node --version` before running anything and refuses to verify a project
+on an older runtime, naming the problem. Generated `package.json` declares
+`"engines": { "node": ">=20" }`, so the requirement travels with the project.
+
+### The toolchain is declared, not assumed
+
+`rust-toolchain.toml` pins the channel. `rust-version` states the minimum. And
+`scripts/check-toolchain.py` checks every tool the build actually uses — rustc, cargo, node,
+python, plus npx, chromium and webkit2gtk as optional — printing the install line for anything
+missing. Both build scripts and `verify-all.sh` run it first, so a fresh machine gets a list of
+what to install instead of a linker error forty seconds in.
+
 
 ### The sandbox is real, and it is not Wasmtime
 
