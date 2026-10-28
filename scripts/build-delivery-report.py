@@ -95,7 +95,7 @@ story = [
     Paragraph("Status against the readiness criteria", h2),
     table([
         ["Area", "State", "Note"],
-        ["Host logic", "Yes", "98 Rust tests, zero dependencies, builds offline"],
+        ["Host logic", "Yes", "101 Rust tests, zero dependencies, builds offline"],
         ["Generated applications", "Yes", "Pass their own suite: 50 tests per app"],
         ["Data pipeline", "Yes", "10 functions, CSV and JSON, domain-neutral"],
         ["Analysis", "Yes", "28 functions, each with a test"],
@@ -111,9 +111,9 @@ story = [
               "None of it is an estimate.", body),
     table([
         ["Check", "Result"],
-        ["cargo test --offline", "98 passed, 0 failed"],
+        ["cargo test --offline", "101 passed, 0 failed"],
         ["Generated-app pipeline and analysis tests", "42 passed"],
-        ["Desktop UI render and accessibility", "24 of 24 checks"],
+        ["Desktop UI render and accessibility", "27 of 27 checks"],
         ["Offline checks (scripts/verify-all.sh)", "9 of 9 passed"],
         ["Dependency graph", "405 crates resolve; tauri 2.12.5"],
     ], [CW - 45 * mm, 45 * mm]),
@@ -142,6 +142,9 @@ story = [
 
     Paragraph("What changed recently", h2),
     ListFlowable([
+        ListItem(Paragraph("<b>Task ledger and memory.</b> Section 8 of the brief: eight task "
+                           "states with acceptance criteria and evidence, notes for changes and failures, "
+                           "and a store that refuses a verified state with no evidence.", body)),
         ListItem(Paragraph("<b>Network denial.</b> The last gap in the sandbox: Node 20 cannot "
                            "restrict the network, so a preload does it, with two tests proving it.", body)),
         ListItem(Paragraph("<b>Sandbox cannot degrade silently.</b> The builder reads "
