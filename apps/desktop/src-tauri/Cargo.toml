@@ -1,0 +1,32 @@
+[package]
+name = "kavach"
+version = "0.5.0"
+description = "Kavach — privacy-first, local-first application builder"
+authors = ["Kavach contributors"]
+license = "Apache-2.0"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "kavach_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+kavach-host = { path = "../../../crates/kavach-host" }
+
+# No dialog or opener plugin: the UI never calls them, and every extra plugin is another
+# permission name that can fail capability validation on a first build.
+
+# No [features] table: Tauri 2 needs none, and declaring `tauri/custom-protocol` fails
+# to resolve on the first build.
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

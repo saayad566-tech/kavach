@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Kavach</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header>
+      <div>
+        <h1>Kavach</h1>
+        <p class="muted">Local-first application builder · no account · no telemetry</p>
+      </div>
+      <span id="host-badge" class="pill" role="status" aria-live="polite">connecting…</span>
+    </header>
+
+    <main id="main">
+      <section class="card" id="device-card">
+        <h2>This device</h2>
+        <p class="muted" id="device-sub">Probing…</p>
+        <dl class="facts" id="device-facts"></dl>
+        <details id="unmeasured-details">
+          <summary>What the probe could not measure</summary>
+          <ul id="unmeasured" class="tight"></ul>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>Build something</h2>
+        <p class="notice" id="inference-notice" role="status" aria-live="polite">
+          <strong>Checking for a local model…</strong>
+        </p>
+        <label class="field">
+          <span>What do you want to build?</span>
+          <textarea id="prompt" rows="3">Build a web app to manage invoices and clients with search and export</textarea>
+        </label>
+        <div class="row">
+          <button id="build" class="primary">Build it</button>
+          <button id="preview-req">Show requirements</button>
+          <button id="export" disabled>Export project…</button>
+          <button id="checkpoint" disabled>Checkpoint now</button>
+          <button id="rescan" disabled>Re-scan for secrets</button>
+          <span id="busy" class="muted" role="status" aria-live="polite"></span>
+        </div>
+        <p id="error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section class="card" id="requirements-card" hidden>
+        <h2>What Kavach understood</h2>
+        <p class="muted" id="req-sub"></p>
+        <div id="req-body"></div>
+      </section>
+
+      <section class="card" id="report-card" hidden>
+        <h2>Delivery report</h2>
+        <p class="muted" id="report-sub"></p>
+        <table class="grid">
+          <thead><tr><th>Stage</th><th>Result</th><th>Detail</th></tr></thead>
+          <tbody id="stages"></tbody>
+        </table>
+        <h3>Model contribution</h3>
+        <p id="model-files" class="muted"></p>
+        <h3>Security scan</h3>
+        <p id="security" class="muted"></p>
+        <h3>Limitations</h3>
+        <ul id="limitations" class="tight"></ul>
+        <h3>Files</h3>
+        <ul id="files" class="tight files"></ul>
+        <p class="muted" id="file-hint">Select a file to read it.</p>
+        <pre id="file-view" class="file-view" hidden></pre>
+        <details>
+          <summary>Checkpoints</summary>
+          <ul id="checkpoints" class="tight"></ul>
+        </details>
+      </section>
+
+      <section class="card" id="models-card">
+        <h2>Local models</h2>
+        <p class="muted">
+          Kavach does not download models. Point it at a file you already have, and it checks
+          the licence and the hash before the file is used.
+        </p>
+        <p class="muted" id="disk-line">Checking disk space…</p>
+
+        <form id="install-form">
+          <label for="model-source">Model file on this machine</label>
+          <input id="model-source" name="source" type="text" placeholder="/path/to/model.gguf" required />
+
+          <label for="model-id">Model id</label>
+          <input id="model-id" name="modelId" type="text" placeholder="qwen2.5-coder-7b-q4" required />
+
+          <label for="model-sha">Expected SHA-256</label>
+          <input id="model-sha" name="sha256" type="text" placeholder="64 hex characters" required />
+
+          <label for="model-licence">Licence name</label>
+          <input id="model-licence" name="licenceName" type="text" placeholder="Apache-2.0" required />
+
+          <label class="checkbox">
+            <input id="model-accept" name="accepted" type="checkbox" required />
+            I have read and accept this model's licence
+          </label>
+
+          <button type="submit" class="primary">Install model</button>
+          <p id="install-error" class="error" role="alert" hidden></p>
+          <p id="install-result" class="muted"></p>
+        </form>
+
+        <h3>Recommended for this machine</h3>
+        <p class="muted" id="model-budget">Measuring this machine…</p>
+        <table class="grid" id="recommended">
+          <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Fit</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <h3>Installed</h3>
+        <p class="muted" id="installed-summary">Nothing installed yet.</p>
+        <table class="grid" id="installed">
+          <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Active</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <details>
+          <summary>Verify an existing file</summary>
+          <form id="verify-form">
+            <label for="verify-path">File path</label>
+            <input id="verify-path" name="path" type="text" required />
+            <label for="verify-sha">Expected SHA-256</label>
+            <input id="verify-sha" name="expected" type="text" />
+            <button type="submit">Hash and verify</button>
+            <p id="verify-result" class="muted"></p>
+          </form>
+        </details>
+      </section>
+
+      <section class="card" id="memory-card">
+        <h2>Project memory</h2>
+        <p class="muted">
+          What the build actually recorded: every task with its state and the evidence that
+          closed it, and the notes left behind. A task cannot read as verified without evidence.
+        </p>
+        <p class="muted" id="memory-summary">Open a project to see its ledger.</p>
+        <table class="grid" id="tasks">
+          <thead><tr><th>Task</th><th>State</th><th>Evidence</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <h3>Notes</h3>
+        <ul id="notes" class="tight"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Projects</h2>
+        <ul id="projects" class="tight"></ul>
+        <p class="muted" id="projects-empty">Nothing yet.</p>
+      </section>
+    </main>
+
+    <footer class="muted">
+      Everything here runs on this machine. The window holds no filesystem or shell
+      permission; it can only call the commands listed in the Rust shell, which apply the
+      command allow-list, the timeout clamp and the path guard.
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

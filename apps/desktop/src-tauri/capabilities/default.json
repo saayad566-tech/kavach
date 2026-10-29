@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline capability for the main window. Deliberately minimal: core only \u2014 no fs, no shell, no http, and no plugin permissions. Every privileged operation goes through a command in src/commands.rs, which applies the allow-list, the timeout clamp and the path guard.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

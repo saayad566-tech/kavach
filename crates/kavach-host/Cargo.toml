@@ -1,0 +1,16 @@
+[package]
+name = "kavach-host"
+version = "0.5.0"
+edition = "2021"
+rust-version = "1.77"
+license = "Apache-2.0"
+description = "Kavach native host: hardware probe, sandboxed execution, model verification, and the application builder"
+
+# Deliberately empty: this crate builds with `cargo build --offline`, so it compiles and
+# tests without touching the network and can be audited without reading a dependency tree.
+# Keeping it that way is a product decision, not an environmental workaround. Everything is std plus a few hand-declared libc calls.
+[dependencies]
+
+[lib]
+name = "kavach_host"
+path = "src/lib.rs"
