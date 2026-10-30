@@ -71,6 +71,17 @@ python3 scripts/check-test-coverage.py    # structural gate: every module tested
 python3 scripts/check-free.py             # zero-cost audit: no paid service or account
 ```
 
+## Get the code
+
+```bash
+./scripts/verify-zip.sh ./dist     # builds a distributable and proves it works
+./scripts/bootstrap.sh             # set a fresh machine up: tools, deps, every check
+```
+
+`verify-zip.sh` packs the tree, extracts it into a clean directory, builds it there, and runs
+the whole offline suite against the extracted copy — a zip that has not been unzipped and built
+is not "ready to use", whatever the filename says. It prints the archive's SHA-256.
+
 ## Toolchain
 
 | Tool | Minimum | Why |

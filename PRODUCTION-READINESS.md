@@ -57,6 +57,16 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 
 ## What changed in this pass
 
+### A distributable that is proved, not assumed
+
+`scripts/verify-zip.sh` packs the tree, extracts it to a clean directory, builds from *that*
+copy, and runs the full offline suite there. It exists because "ready to use" is a claim about
+the extracted artefact, not about the working directory it came from — a zip can be missing a
+file that every test in the source tree depends on.
+
+Verified: 74 files, builds from the extracted copy, 120 tests and all nine offline checks pass,
+and a generated application built from that copy passes its own 50 tests.
+
 ### A defect sweep, and the one real bug it found
 
 The sweep looked for what usually hides in a codebase that has been built in many passes:
