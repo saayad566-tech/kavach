@@ -28,7 +28,7 @@ internal use. See `FREE.md`, and `python3 scripts/check-free.py` to verify the c
 | Resource limits on generated code | **Working** — CPU-time and per-file write caps enforced by the kernel, so grandchildren are covered too |
 | Project store durability | **Working** — versioned index, previous copy kept, automatic recovery if the primary is corrupt |
 | Task ledger and memory | **Working** — eight states, acceptance criteria, evidence-gated verification, notes for changes and failures |
-| Local model manager | **Working** — 12-model catalogue, 5 quants, device-aware recommendation, registry with one active model, GGUF validation |
+| Local model manager | **Working** — 12-model catalogue, 5 quants, device-aware recommendation, registry with one active model, GGUF validation; installing records the model |
 | Local model support | **Working** — discovers Ollama or a llama.cpp server on loopback, never starts one, and writes the project notes |
 | Model-authored application code | **Working, with a safety rule** — the model may add files; they are kept only if the project still passes its own tests, and rolled back otherwise |
 | Desktop UI (static HTML/JS) | **Working** — 24 of 27 commands reachable (3 internal by design), 34 render and accessibility checks; reopen projects, checkpoint on demand, read files, re-scan, install and verify models |

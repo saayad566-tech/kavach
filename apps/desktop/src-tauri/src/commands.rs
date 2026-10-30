@@ -71,6 +71,7 @@ pub fn verify_model(path: String, expected_sha256: String) -> String {
 
 #[tauri::command]
 pub fn install_model(
+    workspace: String,
     model_id: String,
     source_file: String,
     destination_dir: String,
@@ -78,7 +79,7 @@ pub fn install_model(
     licence_accepted: bool,
     licence_name: String,
 ) -> String {
-    host::install_model(&model_id, &source_file, &destination_dir, &expected_sha256, licence_accepted, &licence_name)
+    host::install_model(&workspace, &model_id, &source_file, &destination_dir, &expected_sha256, licence_accepted, &licence_name)
 }
 
 #[tauri::command]

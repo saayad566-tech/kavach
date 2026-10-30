@@ -513,6 +513,7 @@ async function installModel(event) {
 
   try {
     const result = await call('install_model', {
+      workspace: state.workspace || '.',
       modelId: String(data.get('modelId')),
       sourceFile: String(data.get('source')),
       destinationDir: (state.workspace || '.') + '/models',

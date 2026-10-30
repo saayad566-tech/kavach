@@ -186,6 +186,7 @@ pub fn verify_model(path: &str, expected_sha256: &str) -> String {
 
 /// `install_model(...)`.
 pub fn install_model(
+    workspace: &str,
     model_id: &str,
     source_file: &str,
     destination_dir: &str,
@@ -201,12 +202,49 @@ pub fn install_model(
         licence_accepted,
         licence_name,
     }) {
-        Ok(result) => ok(Json::object()
-            .str("modelId", &result.model_id)
-            .str("path", &result.path)
-            .uint("sizeBytes", result.size_bytes)
-            .str("sha256", &result.sha256)
-            .str("licenceName", &result.licence_name)),
+        Ok(result) => {
+            // Record what was installed. Without this the file lands on disk and the registry
+            // stays empty, so the model cannot be listed, activated or forgotten — installed
+            // and invisible.
+            let mut store = Store::load(Path::new(workspace));
+            let quant = models::quants()
+                .iter()
+                .map(|q| q.id)
+                .find(|id| model_id.to_uppercase().contains(&id.to_uppercase()))
+                .unwrap_or("");
+            let spec_id = models::catalog()
+                .iter()
+                .map(|spec| spec.id)
+                .find(|id| model_id.starts_with(id))
+                .unwrap_or(model_id);
+            store.register_model(crate::store::ModelEntry {
+                id: result.model_id.clone(),
+                spec_id: spec_id.to_string(),
+                quant: quant.to_string(),
+                path: result.path.clone(),
+                size_bytes: result.size_bytes,
+                sha256: result.sha256.clone(),
+                licence: result.licence_name.clone(),
+                added_at: crate::store::now(),
+                // The first model installed becomes the active one; the user can switch later.
+                active: store.models.is_empty(),
+            });
+            let recorded = store.save();
+
+            let mut body = Json::object()
+                .str("modelId", &result.model_id)
+                .str("path", &result.path)
+                .uint("sizeBytes", result.size_bytes)
+                .str("sha256", &result.sha256)
+                .str("licenceName", &result.licence_name)
+                .bool("active", store.active_model().map(|m| m.id == result.model_id).unwrap_or(false));
+            // An install that cannot be recorded is still an install; say so rather than
+            // reporting a clean success that vanishes on restart.
+            if let Err(e) = &recorded {
+                body = body.str("recordWarning", e);
+            }
+            ok(body)
+        }
         Err(e) => {
             let kind = match &e {
                 crate::install::InstallError::LicenceNotAccepted(_) => "licence-not-accepted",
@@ -781,10 +819,16 @@ mod tests {
         let src = dir.join("w.bin");
         std::fs::write(&src, b"weights").unwrap();
         let hash = crate::sha256::hash_bytes(b"weights");
-        let denied = install_model("m", &src.to_string_lossy(), &dir.join("models").to_string_lossy(), &hash, false, "Gemma Terms of Use");
+        let ws = dir.to_string_lossy().to_string();
+        let denied = install_model(&ws, "m", &src.to_string_lossy(), &dir.join("models").to_string_lossy(), &hash, false, "Gemma Terms of Use");
         assert!(denied.contains("licence-not-accepted"), "{denied}");
-        let allowed = install_model("m", &src.to_string_lossy(), &dir.join("models").to_string_lossy(), &hash, true, "Apache-2.0");
+        let allowed = install_model(&ws, "m", &src.to_string_lossy(), &dir.join("models").to_string_lossy(), &hash, true, "Apache-2.0");
         assert!(allowed.contains("\"ok\":true"), "{allowed}");
+
+        // The install must also be recorded, or it exists on disk and nowhere else.
+        let listing = models_list(&ws);
+        assert!(listing.contains("\"models\":[{"), "the model should be listed: {listing}");
+        assert!(listing.contains("\"active\":true"), "the first model should become active: {listing}");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -840,6 +884,7 @@ mod tests {
 
         // No licence: refused, and nothing written.
         let refused = install_model(
+            &ws.to_string_lossy(),
             "test-model",
             &source.to_string_lossy(),
             &dest.to_string_lossy(),
@@ -852,6 +897,7 @@ mod tests {
 
         // Wrong hash: refused, and still nothing written.
         let wrong = install_model(
+            &ws.to_string_lossy(),
             "test-model",
             &source.to_string_lossy(),
             &dest.to_string_lossy(),
@@ -864,6 +910,7 @@ mod tests {
 
         // Correct hash and accepted licence: installed and verifiable.
         let installed = install_model(
+            &ws.to_string_lossy(),
             "test-model",
             &source.to_string_lossy(),
             &dest.to_string_lossy(),

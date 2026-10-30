@@ -57,6 +57,32 @@ one thing that genuinely worries me — generated code running as an ordinary ch
 
 ## What changed in this pass
 
+### A defect sweep, and the one real bug it found
+
+The sweep looked for what usually hides in a codebase that has been built in many passes:
+`TODO`, `FIXME`, `unimplemented!`, `todo!`, panics and unwraps in production paths, and
+commands that report success without persisting anything.
+
+Two of those were clean. There are no `TODO`/`FIXME` markers in production code — the ones
+that exist are deliberate, used to detect placeholders in *generated* code — and there are no
+`unwrap`/`panic`/`expect` calls outside test modules (the four hits in `runtime.rs` are a
+parser method named `expect`, not the panicking one).
+
+The third found a real integration bug. `install_model` copied the file, verified the licence
+and the hash, returned success — and never recorded anything. The model existed on disk and
+nowhere else: it could not be listed, activated or forgotten, and the "Installed" panel would
+have stayed empty forever. It now registers on success, becomes active if it is the first
+model, and reports a `recordWarning` when the file installed but the index could not be
+written — because an install that vanishes on restart is worse than one that says so. A test
+now asserts the model is listed and active after installing.
+
+### One command to set a machine up
+
+`scripts/bootstrap.sh` checks every tool, prints the install line for anything missing, fetches
+the desktop dependency graph, and runs the whole offline suite. It is safe to re-run. Verified
+by running it here, not by writing it.
+
+
 ### A real model manager
 
 Installing a model was a form with a path in it. Choosing one — the question a user actually
