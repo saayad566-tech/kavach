@@ -58,6 +58,7 @@ async function boot() {
     await loadRuntime();
     await loadModels();
     await loadCatalog();
+    await loadAgents('');
     await loadInstalledModels();
     await loadProjects();
   } catch (err) {
@@ -389,6 +390,50 @@ async function loadModels() {
   }
 }
 
+// The definitions this platform carries, and what they map onto locally.
+async function loadAgents(task) {
+  const summary = el('agents-summary');
+  if (!summary) return;
+  try {
+    const catalog = await call('agents_catalog', {
+      workspace: state.workspace || '.',
+      task: task || '',
+    });
+    const counts = catalog.counts || {};
+    summary.textContent =
+      (counts.agents || 0) + ' agent(s), ' + (counts.skills || 0) + ' skill(s), ' +
+      (counts.commands || 0) + ' command(s), ' + (counts.rules || 0) + ' rule(s)' +
+      ((catalog.errors || []).length ? ' · ' + catalog.errors.length + ' file(s) failed to parse' : '');
+
+    document.querySelector('#agent-list tbody').replaceChildren(
+      ...(catalog.agents || []).map((agent) => {
+        const tr = document.createElement('tr');
+        const name = document.createElement('td');
+        name.textContent = agent.name;
+        const klass = document.createElement('td');
+        klass.textContent = agent.modelClass;
+        const tools = document.createElement('td');
+        tools.className = 'muted';
+        tools.textContent = (agent.tools || []).join(', ') +
+          ((agent.unmappedTools || []).length ? ' · unavailable: ' + agent.unmappedTools.join(', ') : '');
+        tr.append(name, klass, tools);
+        return tr;
+      }),
+    );
+
+    el('skill-list').replaceChildren(
+      ...(catalog.skills || []).map((skill) => {
+        const li = document.createElement('li');
+        li.textContent = skill.name + (skill.score ? ' (score ' + skill.score + ')' : '') +
+          ' — ' + skill.description;
+        return li;
+      }),
+    );
+  } catch (err) {
+    summary.textContent = 'Cannot read the agent catalogue: ' + err.message;
+  }
+}
+
 // The catalogue answers "what should I run on this machine", from a live probe.
 async function loadCatalog() {
   const budget = el('model-budget');
@@ -664,5 +709,8 @@ el('preview-req').addEventListener('click', showRequirements);
 el('checkpoint').addEventListener('click', checkpointNow);
 el('rescan').addEventListener('click', rescan);
 el('install-form').addEventListener('submit', installModel);
+if (el('agent-task')) {
+  el('agent-task').addEventListener('change', () => loadAgents(el('agent-task').value));
+}
 el('verify-form').addEventListener('submit', verifyModel);
 boot();

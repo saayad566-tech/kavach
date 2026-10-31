@@ -40,6 +40,7 @@ static COMMANDS: &[&str] = &[
     "export_project",
     "create_checkpoint",
     "project_memory",
+    "agents_catalog",
     "model_catalog",
     "models_list",
     "model_activate",

@@ -135,6 +135,23 @@
         </details>
       </section>
 
+      <section class="card" id="agents-card">
+        <h2>Agents and skills</h2>
+        <p class="muted">
+          The agent, skill, command and rule definitions this platform carries, mapped onto a
+          local model class and this app's allow-listed tools. Nothing here calls a hosted API.
+        </p>
+        <p class="muted" id="agents-summary">Loading…</p>
+        <label for="agent-task">Which skills apply to a task?</label>
+        <input id="agent-task" type="text" placeholder="review this code for security issues" />
+        <table class="grid" id="agent-list">
+          <thead><tr><th>Agent</th><th>Model class</th><th>Tools</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <h3>Skills</h3>
+        <ul id="skill-list" class="tight"></ul>
+      </section>
+
       <section class="card" id="memory-card">
         <h2>Project memory</h2>
         <p class="muted">

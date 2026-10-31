@@ -501,6 +501,94 @@ pub fn build_project(workspace: &str, project_id: &str, prompt: &str, use_local_
     ok(crate::json::Json::object().raw("report", &payload))
 }
 
+/// `agents_catalog(workspace, task)` — the agent, skill, command and rule definitions this
+/// platform carries, mapped onto local models and local tools.
+///
+/// The hosted original let the runtime decide which skill to load. Here the mapping is made
+/// explicit and returned, so the UI can show what an agent would actually be given — and so a
+/// definition that needs a tool this platform does not have is visible rather than silently
+/// dropped.
+pub fn agents_catalog(workspace: &str, task: &str) -> String {
+    use crate::agents;
+
+    let (mut definitions, mut errors) = agents::builtin();
+
+    // A project may add its own alongside the bundled ones.
+    for (folder, kind) in [
+        ("agents", agents::DefinitionKind::Agent),
+        ("skills", agents::DefinitionKind::Skill),
+        ("commands", agents::DefinitionKind::Command),
+        ("rules", agents::DefinitionKind::Rule),
+    ] {
+        let dir = Path::new(workspace).join(folder);
+        match agents::load_dir(&dir, kind) {
+            Ok(mut loaded) => definitions.append(&mut loaded),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    let agents_json: Vec<String> = definitions
+        .iter()
+        .filter(|d| d.kind == agents::DefinitionKind::Agent)
+        .map(|d| {
+            let (tools, unmapped) = agents::resolve_tools(&d.frontmatter.tools);
+            let class = agents::resolve_model_class(&d.frontmatter.model);
+            Json::object()
+                .str("name", d.name())
+                .str("description", &d.frontmatter.description)
+                .str("modelClass", class.as_str())
+                .num("minParamsTenths", (class.min_params_b() * 10.0) as i64)
+                .strings("tools", &tools.iter().map(|t| t.name().to_string()).collect::<Vec<_>>())
+                .strings("unmappedTools", &unmapped)
+                .str("path", &d.path)
+                .finish()
+        })
+        .collect();
+
+    let skills: Vec<agents::Definition> = definitions
+        .iter()
+        .filter(|d| d.kind == agents::DefinitionKind::Skill)
+        .cloned()
+        .collect();
+
+    // With no task, list the skills; with one, rank them and show why each was picked.
+    let skills_json: Vec<String> = if task.trim().is_empty() {
+        skills
+            .iter()
+            .map(|s| {
+                Json::object()
+                    .str("name", s.name())
+                    .str("description", &s.frontmatter.description)
+                    .num("score", 0)
+                    .finish()
+            })
+            .collect()
+    } else {
+        agents::rank_skills(&skills, task, 8)
+            .iter()
+            .map(|(s, score)| {
+                Json::object()
+                    .str("name", s.name())
+                    .str("description", &s.frontmatter.description)
+                    .num("score", *score as i64)
+                    .finish()
+            })
+            .collect()
+    };
+
+    let counts = Json::object()
+        .num("agents", definitions.iter().filter(|d| d.kind == agents::DefinitionKind::Agent).count() as i64)
+        .num("skills", skills.len() as i64)
+        .num("commands", definitions.iter().filter(|d| d.kind == agents::DefinitionKind::Command).count() as i64)
+        .num("rules", definitions.iter().filter(|d| d.kind == agents::DefinitionKind::Rule).count() as i64);
+
+    ok(Json::object()
+        .raw("counts", &counts.finish())
+        .raw("agents", &format!("[{}]", agents_json.join(",")))
+        .raw("skills", &format!("[{}]", skills_json.join(",")))
+        .strings("errors", &errors))
+}
+
 /// `model_catalog(workspace)` — the catalogue, the quantisation levels, and what this machine
 /// should run.
 ///
@@ -1005,6 +1093,23 @@ mod tests {
         assert!(store.forget_model("a"));
         assert!(file.is_file(), "forget must not delete the file");
         assert!(!store.forget_model("a"));
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn the_agents_catalog_exposes_the_bundled_definitions() {
+        let ws = tmp("agents-catalog");
+        let json = agents_catalog(&ws.to_string_lossy(), "");
+        assert!(json.contains("\"ok\":true"), "{json}");
+        assert!(json.contains("code-reviewer"), "the agent set should be present: {json}");
+        assert!(json.contains("\"modelClass\":\"reasoning\""), "opus should resolve to the reasoning class: {json}");
+        assert!(json.contains("\"unmappedTools\":[]"), "the bundled agents only use mapped tools: {json}");
+        assert!(json.contains("\"errors\":[]"), "every bundled definition should parse: {json}");
+
+        // With a task, skills are ranked and carry a score.
+        let ranked = agents_catalog(&ws.to_string_lossy(), "review this code for security and injection risks");
+        assert!(ranked.contains("security"), "{ranked}");
+        assert!(ranked.contains("\"score\":"), "{ranked}");
         std::fs::remove_dir_all(&ws).ok();
     }
 

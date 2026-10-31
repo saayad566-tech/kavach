@@ -43,6 +43,7 @@ pub fn run() {
             commands::export_project,
             commands::create_checkpoint,
             commands::project_memory,
+            commands::agents_catalog,
             commands::model_catalog,
             commands::models_list,
             commands::model_activate,

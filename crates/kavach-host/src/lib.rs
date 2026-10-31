@@ -16,6 +16,9 @@
 //!   * `export`    — getting the work back out as a plain source tree
 //!   * `commands`  — the surface the Tauri shell exposes
 
+pub mod agents;
+#[path = "agents_builtin.rs"]
+pub mod agents_builtin;
 pub mod builder;
 pub mod commands;
 pub mod exec;
@@ -53,6 +56,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "export_project",
     "create_checkpoint",
     "project_memory",
+    "agents_catalog",
     "model_catalog",
     "models_list",
     "model_activate",

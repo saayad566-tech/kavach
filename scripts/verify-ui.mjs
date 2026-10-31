@@ -90,6 +90,18 @@ window.__TAURI__ = {
         return { ok: true, sha256: 'b'.repeat(64) };
       case 'verify_model':
         return { ok: true, matches: true };
+      case 'agents_catalog':
+        return { ok: true,
+                 counts: { agents: 9, skills: 11, commands: 15, rules: 8 },
+                 agents: [
+                   { name: 'code-reviewer', description: 'Expert code review', modelClass: 'reasoning',
+                     minParamsTenths: 140, tools: ['read_file', 'search', 'list_files', 'run_command'],
+                     unmappedTools: [], path: 'agents/code-reviewer.md' },
+                   { name: 'tdd-guide', description: 'Test-first development', modelClass: 'balanced',
+                     minParamsTenths: 70, tools: ['read_file', 'write_file'], unmappedTools: [], path: 'agents/tdd-guide.md' },
+                 ],
+                 skills: [{ name: 'security-review', description: 'Review for injection', score: 12 }],
+                 errors: [] };
       case 'model_catalog':
         return { ok: true, budgetBytes: 24051816857,
                  specs: [{ id: 'qwen2.5-coder-7b', name: 'Qwen2.5 Coder 7B', family: 'qwen2.5-coder',
@@ -207,6 +219,10 @@ const checks = {
   'ledger shows task states': /2 task\(s\):/.test(text) && /needs-verification/.test(text),
   'ledger shows evidence': /passed under the permission model/.test(text),
   'notes are shown': /change: Build: 14 files/.test(text),
+  'agent catalogue is counted': /9 agent\(s\), 11 skill\(s\)/.test(text),
+  'agents show their local model class': /reasoning/.test(text) && /balanced/.test(text),
+  'agent tools are the local ones': /read_file/.test(text),
+  'skills show a match score': /security-review \(score 12\)/.test(text),
   'catalogue shows a budget for this machine': /Budget for model weights: /.test(text),
   'recommendations show a fit verdict': /comfortable/.test(text) && /tight/.test(text),
   'a 32B model is recommended on a big machine': /Qwen2\.5 Coder 32B/.test(text),

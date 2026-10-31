@@ -125,6 +125,11 @@ pub fn model_forget(workspace: String, id: String) -> String {
 }
 
 #[tauri::command]
+pub fn agents_catalog(workspace: String, task: String) -> String {
+    host::agents_catalog(&workspace, &task)
+}
+
+#[tauri::command]
 pub fn model_catalog(workspace: String) -> String {
     host::model_catalog(&workspace)
 }
