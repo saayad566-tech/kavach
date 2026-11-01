@@ -56,7 +56,47 @@ stragglers become `null` and validation reports them.
 Every function returns `null` rather than `NaN` when the answer is undefined, so a caller can
 distinguish "no data" from "the answer is zero". That distinction is tested.
 
-## HTTP API — 8 routes (`src/server.js`)
+## Fundamental analysis — 39 functions (`src/fundamentals.js`)
+
+For applications that analyse a business rather than a generic table. Every function takes one
+period of statements and returns a number, or `null` when the inputs cannot support it — never
+`NaN`, never `Infinity`.
+
+**Profitability (8)** — gross, operating, net and EBITDA margin; ROE, ROA, ROIC (NOPAT over
+equity plus debt), effective tax rate
+
+**Efficiency (5)** — asset turnover, inventory turnover, days inventory, receivables turnover,
+days sales outstanding
+
+**Liquidity (4)** — current, quick and cash ratio; working capital
+
+**Leverage (4)** — debt/equity, debt/assets, net debt, interest cover
+
+**Per share (6)** — EPS, book value per share, P/E, P/B, P/S, dividend payout
+
+**Valuation (6)** — market cap, enterprise value, EV/EBITDA, free cash flow, FCF margin,
+Graham number (undefined for loss-makers, deliberately)
+
+**Composites (4)** — three-factor DuPont (which multiplies back to ROE), Altman Z-score with
+safe/grey/distress zones, Piotroski F-score (nine signals across two periods), Rule of 40
+
+**Diagnostics (2)** — `qualityFlags` (accrual gap, negative FCF, high leverage, liquidity below
+one, margin compression, dilution, thin interest cover) and `analyse`, which returns every
+group at once
+
+`normaliseStatement` maps any reasonable spelling onto the canonical field names — the pipeline
+lowercases CSV headers, so `totalEquity` arrives as `totalequity` and would otherwise read as
+missing. Numeric strings and `1,000`-style values are converted; unknown columns are dropped
+rather than guessed at.
+
+### What this is not
+
+It is not a data feed. Kavach computes these ratios from `data/statements.csv`, which you
+supply — from an annual report, an exchange filing, or a subscription you already pay for.
+Nothing is fetched, so there is no quota, no account, and no data leaving the machine. An app
+that quietly scraped exchanges would be both legally fraught and a different product.
+
+## HTTP API — 10 routes (`src/server.js`)
 
 | Route | Returns |
 |---|---|

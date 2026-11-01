@@ -414,6 +414,9 @@ const ANALYTICS_JS: &str = include_str!("../assets/app/src/analytics.js");
 const ANALYTICS_TEST_JS: &str = include_str!("../assets/app/test/analytics.test.js");
 const PIPELINE_TEST_JS: &str = include_str!("../assets/app/test/pipeline.test.js");
 const SAMPLE_CSV: &str = include_str!("../assets/app/data/sample.csv");
+const FUNDAMENTALS_JS: &str = include_str!("../assets/app/src/fundamentals.js");
+const FUNDAMENTALS_TEST_JS: &str = include_str!("../assets/app/test/fundamentals.test.js");
+const STATEMENTS_CSV: &str = include_str!("../assets/app/data/statements.csv");
 /// Preloaded before every generated test file. Node 20's permission model has no network
 /// switch, so outbound access is denied by a preload instead.
 const NETWORK_GUARD: &str = include_str!("../assets/app/test-guard/network-guard.mjs");
@@ -424,6 +427,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, ValidationError, COLLECTIONS } from './store.js';
 import { readDataset } from './pipeline.js';
+import { analyse, normaliseStatement } from './fundamentals.js';
 import {
   describeAll, groupAggregate, topN, dataQuality, linearTrend, timeBucket,
   filterWhere, sortBy, paginate, toCsv, count,
@@ -444,6 +448,16 @@ function json(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(payload) });
   res.end(payload);
+}
+
+// Statements are a separate file from the generic dataset: a company's accounts are not the
+// same shape as an arbitrary table, and mixing them would make both routes wrong.
+let statementsCache = null;
+async function loadStatements() {
+  if (statementsCache) return statementsCache;
+  const file = process.env.KAVACH_STATEMENTS || path.join(here, '..', 'data', 'statements.csv');
+  statementsCache = await readDataset(file);
+  return statementsCache;
 }
 
 // One read per process: the sample file does not change while the server runs.
@@ -533,6 +547,54 @@ export function createApp() {
         }
       }
 
+      // ---- fundamentals ---------------------------------------------------
+      // Ratios are computed from the statements the user supplies. The latest period per
+      // company is used, with the previous period attached so the two-period measures work.
+      if (url.pathname.startsWith('/api/fundamentals')) {
+        let rows;
+        try {
+          rows = (await loadStatements()).records;
+        } catch {
+          return json(res, 404, { error: 'no statements file: add data/statements.csv' });
+        }
+        const companies = [...new Set(rows.map((r) => r.company))];
+
+        if (url.pathname === '/api/fundamentals/companies') {
+          return json(res, 200, { companies });
+        }
+
+        const wanted = url.searchParams.get('company');
+        if (!wanted) return json(res, 400, { error: 'company is required' });
+
+        const periods = rows
+          .filter((r) => r.company === wanted)
+          .sort((a, b) => Number(b.period) - Number(a.period));
+        if (periods.length === 0) return json(res, 404, { error: 'unknown company ' + wanted });
+
+        // The pipeline lowercases CSV headers, so every record is normalised onto the
+        // canonical field names before any ratio reads it.
+        const latest = normaliseStatement(periods[0]);
+        const previousRow = periods[1] || null;
+        const previous = previousRow ? normaliseStatement(previousRow) : null;
+        if (previous) {
+          // Attach the prior period under the names the two-period ratios expect.
+          for (const key of ['revenue', 'netIncome', 'totalAssets', 'currentAssets',
+            'currentLiabilities', 'longTermDebt', 'sharesOutstanding', 'grossProfit',
+            'costOfGoods']) {
+            if (previous[key] !== undefined) {
+              latest['prior' + key.charAt(0).toUpperCase() + key.slice(1)] = previous[key];
+            }
+          }
+        }
+        return json(res, 200, {
+          company: wanted,
+          period: periods[0].period,
+          // The period label comes from the raw row: normalisation keeps financial fields only.
+          comparedWith: previousRow ? previousRow.period : null,
+          analysis: analyse(latest),
+        });
+      }
+
       if (url.pathname === '/api/health') {
         json(res, 200, { ok: true, collections: COLLECTIONS, analysis: true, rows: count((await loadDataset()).records) });
         return;
@@ -613,6 +675,74 @@ function fillTable(tableId, rows) {
     td.textContent = value === null || value === undefined ? '—' : String(value);
     tr.append(th, td);
     tbodyEl.append(tr);
+  }
+}
+
+// Fundamentals: ratios computed from the statements file the user supplies.
+//
+// The panel shows four groups rather than one long list: an analyst reads profitability,
+// then leverage, then price, then quality — and a single 40-row table hides that order.
+const asPercent = (v) => (v === null || v === undefined ? '—' : (v * 100).toFixed(2) + '%');
+const asNumber = (v, digits) => (v === null || v === undefined ? '—' : Number(v).toFixed(digits ?? 2));
+
+async function loadFundamentals(company) {
+  const sourceEl = document.getElementById('fundamentals-source');
+  const errorEl = document.getElementById('fundamentals-error');
+  const select = document.getElementById('company-select');
+  if (!sourceEl || !select) return;
+  try {
+    if (select.options.length === 0) {
+      const listing = await api('/api/fundamentals/companies');
+      for (const name of listing.companies || []) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.append(option);
+      }
+      select.addEventListener('change', () => loadFundamentals(select.value));
+    }
+    const chosen = company || select.value;
+    if (!chosen) {
+      sourceEl.textContent = 'No companies in data/statements.csv yet.';
+      return;
+    }
+    const result = await api('/api/fundamentals?company=' + encodeURIComponent(chosen));
+    const a = result.analysis;
+    sourceEl.textContent =
+      result.company + ' — period ' + result.period +
+      (result.comparedWith ? ', compared with ' + result.comparedWith : ', no prior period') +
+      ' · ' + (a.flags.length ? a.flags.length + ' flag(s)' : 'no flags');
+
+    fillTable('fp-profitability', [
+      ['gross margin', asPercent(a.profitability.grossMargin)],
+      ['operating margin', asPercent(a.profitability.operatingMargin)],
+      ['net margin', asPercent(a.profitability.netMargin)],
+      ['ROE', asPercent(a.profitability.roe)],
+      ['ROIC', asPercent(a.profitability.roic)],
+    ]);
+    fillTable('fp-leverage', [
+      ['current ratio', asNumber(a.liquidity.currentRatio)],
+      ['quick ratio', asNumber(a.liquidity.quickRatio)],
+      ['debt / equity', asNumber(a.leverage.debtToEquity)],
+      ['interest cover', asNumber(a.leverage.interestCoverage, 1)],
+    ]);
+    fillTable('fp-valuation', [
+      ['P/E', asNumber(a.perShare.peRatio)],
+      ['P/B', asNumber(a.perShare.pbRatio)],
+      ['EV / EBITDA', asNumber(a.valuation.evEbitda)],
+      ['FCF margin', asPercent(a.valuation.fcfMargin)],
+    ]);
+    fillTable('fp-quality', [
+      ['Piotroski F', a.composites.piotroskiF.score + ' / ' + a.composites.piotroskiF.of],
+      ['Altman Z', a.composites.altmanZ ? a.composites.altmanZ.zone + ' (' + asNumber(a.composites.altmanZ.z) + ')' : '—'],
+      ['DuPont ROE', asPercent(a.composites.dupont ? a.composites.dupont.roe : null)],
+      ['flags', a.flags.length ? a.flags.map((f) => f.flag).join(', ') : 'none'],
+    ]);
+  } catch (err) {
+    if (errorEl) {
+      errorEl.hidden = false;
+      errorEl.textContent = 'Fundamentals unavailable: ' + err.message;
+    }
   }
 }
 
@@ -766,6 +896,7 @@ async function init() {
     });
     if (health.collections.length > 0) await load(health.collections[0]);
     await loadAnalysis();
+    await loadFundamentals();
   } catch (err) {
     statusEl.textContent = 'Cannot reach the API: ' + err.message;
   }
@@ -917,6 +1048,20 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
       <p id="analysis-error" class="error" role="alert" hidden></p>
     </section>
 
+    <section id="fundamentals" aria-labelledby="fundamentals-title">
+      <h2 id="fundamentals-title">Fundamentals</h2>
+      <p class="muted" id="fundamentals-source">Reading statements…</p>
+      <label for="company-select">Company</label>
+      <select id="company-select"></select>
+      <div class="grid">
+        <div><h3>Profitability</h3><table id="fp-profitability"><tbody></tbody></table></div>
+        <div><h3>Leverage &amp; liquidity</h3><table id="fp-leverage"><tbody></tbody></table></div>
+        <div><h3>Valuation</h3><table id="fp-valuation"><tbody></tbody></table></div>
+        <div><h3>Quality</h3><table id="fp-quality"><tbody></tbody></table></div>
+      </div>
+      <p id="fundamentals-error" class="error" role="alert" hidden></p>
+    </section>
+
     <nav>
         {tabs}
         <input id="search" type="search" placeholder="Search…" aria-label="Search records" />
@@ -973,6 +1118,9 @@ pub fn scaffold(reqs: &Requirements) -> Vec<GeneratedFile> {
         GeneratedFile { path: "test/store.test.js".into(), content: TEST_JS.to_string(), origin: "scaffold" },
         GeneratedFile { path: "test/pipeline.test.js".into(), content: PIPELINE_TEST_JS.to_string(), origin: "scaffold" },
         GeneratedFile { path: "test/analytics.test.js".into(), content: ANALYTICS_TEST_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "src/fundamentals.js".into(), content: FUNDAMENTALS_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "test/fundamentals.test.js".into(), content: FUNDAMENTALS_TEST_JS.to_string(), origin: "scaffold" },
+        GeneratedFile { path: "data/statements.csv".into(), content: STATEMENTS_CSV.to_string(), origin: "scaffold" },
         GeneratedFile { path: "data/sample.csv".into(), content: SAMPLE_CSV.to_string(), origin: "scaffold" },
         GeneratedFile { path: "README.md".into(), content: readme, origin: "scaffold" },
     ]
@@ -1541,6 +1689,8 @@ mod tests {
             // the data pipeline and the analysis suite
             "src/types.js", "src/pipeline.js", "src/analytics.js",
             "test/pipeline.test.js", "test/analytics.test.js", "data/sample.csv",
+            // the fundamentals engine
+            "src/fundamentals.js", "test/fundamentals.test.js", "data/statements.csv",
         ] {
             assert!(paths.contains(&required), "missing {required}");
         }

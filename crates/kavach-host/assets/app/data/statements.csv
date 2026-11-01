@@ -1,0 +1,5 @@
+company,period,revenue,costOfGoods,operatingIncome,ebit,interest,tax,preTaxIncome,netIncome,totalAssets,totalLiabilities,totalEquity,currentAssets,currentLiabilities,inventory,receivables,cash,debt,longTermDebt,operatingCashFlow,capex,depreciation,dividends,sharesOutstanding,price
+AAA,2025,1000,600,200,190,10,45,180,135,800,500,300,400,200,100,150,50,200,150,160,60,30,40,100,20
+AAA,2024,900,580,170,160,12,40,150,110,750,510,240,350,190,90,140,45,210,170,140,55,28,35,100,18
+BBB,2025,500,350,80,75,15,15,60,45,600,450,150,220,180,80,90,20,300,260,50,40,20,0,50,12
+BBB,2024,520,360,90,85,14,17,68,51,590,440,150,230,175,85,95,18,290,250,60,38,19,0,50,14
