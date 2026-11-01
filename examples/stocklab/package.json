@@ -1,0 +1,14 @@
+{
+  "name": "stocklab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fundamental analysis of listed companies, computed locally from statements you supply",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  }
+}

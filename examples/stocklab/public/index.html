@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StockLab — fundamental analysis</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header>
+      <h1>StockLab</h1>
+      <p class="muted">Fundamental analysis computed on this machine, from statements you supply.</p>
+      <p id="status" role="status" aria-live="polite" class="muted">Loading…</p>
+    </header>
+
+    <main id="main">
+      <section aria-labelledby="screen-title">
+        <h2 id="screen-title">Screen</h2>
+        <form id="screen-form">
+          <label for="screen-metric">Metric</label>
+          <select id="screen-metric">
+            <option value="roe">Return on equity</option>
+            <option value="roic">Return on invested capital</option>
+            <option value="netMargin">Net margin</option>
+            <option value="grossMargin">Gross margin</option>
+            <option value="debtToEquity">Debt / equity</option>
+            <option value="peRatio">P/E</option>
+            <option value="fcfMargin">FCF margin</option>
+            <option value="piotroskiF">Piotroski F</option>
+          </select>
+
+          <label for="screen-op">Comparison</label>
+          <select id="screen-op">
+            <option value="gt">greater than</option>
+            <option value="gte">at least</option>
+            <option value="lt">less than</option>
+            <option value="lte">at most</option>
+          </select>
+
+          <label for="screen-value">Value</label>
+          <input id="screen-value" type="number" step="0.01" value="0.15" />
+
+          <button type="submit" class="primary">Run screen</button>
+        </form>
+        <p id="screen-summary" class="muted"></p>
+        <ul id="screen-results" class="tight"></ul>
+      </section>
+
+      <section aria-labelledby="rank-title">
+        <h2 id="rank-title">Ranking</h2>
+        <label for="rank-metric">Rank by</label>
+        <select id="rank-metric">
+          <option value="roe">Return on equity</option>
+          <option value="roic">Return on invested capital</option>
+          <option value="netMargin">Net margin</option>
+          <option value="piotroskiF">Piotroski F</option>
+          <option value="altmanZ">Altman Z</option>
+          <option value="peRatio">P/E (lower first)</option>
+        </select>
+        <table class="grid" id="rank-table">
+          <thead><tr><th>Symbol</th><th>Sector</th><th>Value</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section aria-labelledby="sectors-title">
+        <h2 id="sectors-title">Sectors</h2>
+        <p class="muted">Median by sector, with each company's position inside its own sector.</p>
+        <div id="sectors"></div>
+      </section>
+
+      <section aria-labelledby="company-title">
+        <h2 id="company-title">Company</h2>
+        <label for="company-select">Symbol</label>
+        <select id="company-select"></select>
+        <p id="company-summary" class="muted"></p>
+        <div class="grid">
+          <div><h3>Profitability</h3><table id="c-profitability"><tbody></tbody></table></div>
+          <div><h3>Leverage &amp; liquidity</h3><table id="c-leverage"><tbody></tbody></table></div>
+          <div><h3>Valuation</h3><table id="c-valuation"><tbody></tbody></table></div>
+          <div><h3>Quality</h3><table id="c-quality"><tbody></tbody></table></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="dcf-title">
+        <h2 id="dcf-title">DCF valuation</h2>
+        <form id="dcf-form">
+          <label for="dcf-growth">Growth</label>
+          <input id="dcf-growth" type="number" step="0.01" value="0.05" />
+          <label for="dcf-discount">Discount rate</label>
+          <input id="dcf-discount" type="number" step="0.01" value="0.10" />
+          <label for="dcf-terminal">Terminal growth</label>
+          <input id="dcf-terminal" type="number" step="0.005" value="0.025" />
+          <button type="submit" class="primary">Value it</button>
+        </form>
+        <p id="dcf-summary" class="muted"></p>
+        <table class="grid" id="dcf-grid"><tbody></tbody></table>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

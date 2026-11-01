@@ -72,6 +72,19 @@ python3 scripts/check-test-coverage.py    # structural gate: every module tested
 python3 scripts/check-free.py             # zero-cost audit: no paid service or account
 ```
 
+## An example of what it generates
+
+`examples/stocklab/` is a complete application the builder's pattern produces: screening,
+sector-relative ranking, peer scoring, 39 financial ratios and a DCF with a sensitivity grid,
+computed locally from statements you supply.
+
+```bash
+cd examples/stocklab && npm start    # http://127.0.0.1:4270
+cd examples/stocklab && npm test     # 20 tests
+```
+
+It is an example, not the product. Kavach builds applications; this is one of them.
+
 ## Get the code
 
 ```bash
