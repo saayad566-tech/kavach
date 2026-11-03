@@ -582,10 +582,28 @@ pub fn agents_catalog(workspace: &str, task: &str) -> String {
         .num("commands", definitions.iter().filter(|d| d.kind == agents::DefinitionKind::Command).count() as i64)
         .num("rules", definitions.iter().filter(|d| d.kind == agents::DefinitionKind::Rule).count() as i64);
 
+    // Commands and rules are listed too: they are part of the surface a user can inspect, and
+    // returning only a count leaves them invisible.
+    let list_of = |kind: agents::DefinitionKind| -> Vec<String> {
+        definitions
+            .iter()
+            .filter(|d| d.kind == kind)
+            .map(|d| {
+                Json::object()
+                    .str("name", d.name())
+                    .str("description", &d.frontmatter.description)
+                    .str("path", &d.path)
+                    .finish()
+            })
+            .collect()
+    };
+
     ok(Json::object()
         .raw("counts", &counts.finish())
         .raw("agents", &format!("[{}]", agents_json.join(",")))
         .raw("skills", &format!("[{}]", skills_json.join(",")))
+        .raw("commands", &format!("[{}]", list_of(agents::DefinitionKind::Command).join(",")))
+        .raw("rules", &format!("[{}]", list_of(agents::DefinitionKind::Rule).join(",")))
         .strings("errors", &errors))
 }
 
@@ -1105,6 +1123,8 @@ mod tests {
         assert!(json.contains("\"modelClass\":\"reasoning\""), "opus should resolve to the reasoning class: {json}");
         assert!(json.contains("\"unmappedTools\":[]"), "the bundled agents only use mapped tools: {json}");
         assert!(json.contains("\"errors\":[]"), "every bundled definition should parse: {json}");
+        assert!(json.contains("\"commands\":[{\"name\""), "commands should be listed: {json}");
+        assert!(json.contains("\"rules\":[{\"name\""), "rules should be listed: {json}");
 
         // With a task, skills are ranked and carry a score.
         let ranked = agents_catalog(&ws.to_string_lossy(), "review this code for security and injection risks");

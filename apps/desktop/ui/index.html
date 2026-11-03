@@ -107,7 +107,17 @@
       </main>
 
       <!-- ---------------------------------------------------------------- inspector -->
-      <aside class="inspector" aria-label="Details">
+      <button id="inspector-toggle" class="ghost inspector-toggle" aria-expanded="false" aria-controls="inspector">
+        Details
+      </button>
+
+      <aside class="inspector" id="inspector" aria-label="Details">
+        <div class="tabs" role="tablist" aria-label="Detail sections">
+          <button class="tab" role="tab" id="tab-device" aria-controls="device-card" aria-selected="true">Device</button>
+          <button class="tab" role="tab" id="tab-models" aria-controls="models-card" aria-selected="false">Models</button>
+          <button class="tab" role="tab" id="tab-agents" aria-controls="agents-card" aria-selected="false">Agents</button>
+          <button class="tab" role="tab" id="tab-memory" aria-controls="memory-card" aria-selected="false">Memory</button>
+        </div>
         <section class="card" id="device-card">
           <h2>This device</h2>
           <p class="sub" id="device-sub"></p>
@@ -129,6 +139,16 @@
             <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Fit</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
+
+          <details id="catalogue-details">
+            <summary>Full catalogue</summary>
+            <table class="grid" id="catalogue">
+              <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Licence</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <h3>Quantisation levels</h3>
+            <ul id="quant-list" class="tight"></ul>
+          </details>
 
           <h3>Installed</h3>
           <p class="sub" id="installed-summary">Nothing installed yet.</p>
@@ -183,6 +203,13 @@
           </table>
           <h3>Skills</h3>
           <ul id="skill-list" class="tight"></ul>
+          <details>
+            <summary>Commands and rules</summary>
+            <h3>Commands</h3>
+            <ul id="command-list" class="tight"></ul>
+            <h3>Rules</h3>
+            <ul id="rule-list" class="tight"></ul>
+          </details>
         </section>
 
         <section class="card" id="memory-card">

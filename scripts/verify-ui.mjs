@@ -101,13 +101,18 @@ window.__TAURI__ = {
                      minParamsTenths: 70, tools: ['read_file', 'write_file'], unmappedTools: [], path: 'agents/tdd-guide.md' },
                  ],
                  skills: [{ name: 'security-review', description: 'Review for injection', score: 12 }],
+                 commands: [{ name: 'orchestrate', description: 'Sequential agent workflow', path: 'commands/orchestrate.md' }],
+                 rules: [{ name: 'security', description: 'Always-on security rules', path: 'rules/security.md' }],
                  errors: [] };
       case 'model_catalog':
         return { ok: true, budgetBytes: 24051816857,
                  specs: [{ id: 'qwen2.5-coder-7b', name: 'Qwen2.5 Coder 7B', family: 'qwen2.5-coder',
                            licence: 'Apache-2.0', strengths: 'the best code model that fits a laptop',
                            paramsB: 70, context: 32768, bestQuant: 'Q5_K_M', sizeBytes: 5046586572 }],
-                 quants: [{ id: 'Q4_K_M', quality: 88, note: 'default' }],
+                 quants: [
+                   { id: 'Q4_K_M', quality: 88, note: 'default: best size for the quality lost' },
+                   { id: 'Q8_0', quality: 99, note: 'effectively lossless, twice the disk' },
+                 ],
                  recommended: [
                    { id: 'qwen2.5-coder-32b', name: 'Qwen2.5 Coder 32B', quant: 'Q4_K_M',
                      verdict: 'tight', sizeBytes: 19241453486, context: 32768, tokensPerSecond: 154 },
@@ -154,6 +159,10 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     const build = document.getElementById('build');
     if (build) build.click();
+    // Also open the inspector drawer, so the narrow-window path is exercised rather than
+    // assumed: the panel is display:none until this class is set.
+    const toggle = document.getElementById('inspector-toggle');
+    if (toggle) toggle.click();
   }, 200);
 });`;
 
@@ -219,6 +228,13 @@ const checks = {
   'ledger shows task states': /2 task\(s\):/.test(text) && /needs-verification/.test(text),
   'ledger shows evidence': /passed under the permission model/.test(text),
   'notes are shown': /change: Build: 14 files/.test(text),
+  'inspector tabs are present': /role="tablist"/.test(dom) && (dom.match(/role="tab"/g) || []).length >= 4,
+  'only one inspector panel is shown at a time': (dom.match(/class="card active"/g) || []).length === 1,
+  'the inspector drawer opens on a narrow window': /class="inspector open"/.test(dom) && /aria-expanded="true"/.test(dom),
+  'the full catalogue is rendered': /Qwen2\.5 Coder 32B/.test(text) && /Apache-2\.0/.test(text),
+  'quantisation levels are listed': /Q4_K_M — quality 88/.test(text),
+  'commands are listed': /orchestrate — Sequential agent workflow/.test(text),
+  'rules are listed': /security — Always-on security rules/.test(text),
   'agent catalogue is counted': /9 agent\(s\), 11 skill\(s\)/.test(text),
   'agents show their local model class': /reasoning/.test(text) && /balanced/.test(text),
   'agent tools are the local ones': /read_file/.test(text),

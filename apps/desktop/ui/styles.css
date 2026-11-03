@@ -97,9 +97,37 @@ body {
   overflow: hidden;
 }
 
+/* Below this width the inspector becomes a drawer the user opens, rather than disappearing.
+ * Hiding it made the models, agents and memory panels unreachable on a laptop. */
+.inspector-toggle { display: none; }
+
 @media (max-width: 1200px) {
   .app { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
-  .inspector { display: none; }
+
+  /* Top-right, not bottom-right: at the bottom it sat on top of the composer's Build button,
+   * which is the one control the user must be able to hit. */
+  .inspector-toggle {
+    display: block;
+    position: fixed;
+    right: 0.9rem;
+    top: 0.9rem;
+    z-index: 30;
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+  }
+
+  .topbar { padding-right: 6.5rem; }
+
+  .inspector {
+    display: none;
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(420px, 92vw);
+    z-index: 25;
+    box-shadow: -8px 0 24px rgb(0 0 0 / 0.14);
+  }
+  .inspector.open { display: block; }
 }
 
 @media (max-width: 820px) {
@@ -446,3 +474,35 @@ ul.tight li { margin: 0.15rem 0; font-size: 0.85rem; }
 }
 .pill.ok { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
 .pill.bad { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+
+/* ---------------------------------------------------------------- inspector tabs */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.7rem;
+  padding: 0.2rem;
+  border-radius: var(--pill);
+  background: var(--bg-sunken);
+}
+
+.tabs .tab {
+  flex: 1;
+  padding: 0.35rem 0.4rem;
+  border: 0;
+  border-radius: var(--pill);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+.tabs .tab[aria-selected="true"] {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+/* Only the selected panel is shown; the rest keep their place in the DOM so their state
+ * (an open <details>, a scrolled table) survives a tab switch. */
+.inspector .card { display: none; }
+.inspector .card.active { display: block; }

@@ -25,7 +25,6 @@ step. If an item is fixed, delete it rather than marking it done.
 |---|---|---|---|
 | K-07 | The agent loop is not built. Definitions parse, map and compose; nothing executes a tool call yet. | Model-driven agents do not run. | Implement `agents::run` — executor, iteration cap, repair path. `docs/ECC-LOCAL-PORT.md` has the sequence. |
 | K-08 | The network guard is a preload, not a kernel boundary. | A determined test could reload a module past it. | Node 22's permission model, when the target runtime moves. |
-| K-09 | The inspector rail is hidden below 1200px. | Models, agents and memory are unreachable on a narrow window. | Add a drawer or tab for the inspector. |
 | K-10 | No authentication in generated applications. | A generated app is single-user, local only. | Out of scope unless the product changes. |
 
 ## Fixed — keep these fixed
@@ -35,4 +34,5 @@ step. If an item is fixed, delete it rather than marking it done.
 - ~~Piotroski scored 8/9 when prior gross profit was absent~~ (2.1.0) — derive it from prior revenue less COGS.
 - ~~`map_tool` rejected the local tool names it advertises~~ (2.0.0).
 - ~~The tree was replaced by a single-file snapshot~~ (1.7.0) — recovered from the parent commit.
+- ~~The inspector was hidden below 1200px~~ (2.5.0) — now a drawer, opened from a button.
 - ~~`crates.io` recorded as blocked~~ — only the website is; the sparse index and crate files download.

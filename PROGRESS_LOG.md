@@ -2,6 +2,21 @@
 
 Newest first. One entry per session: what changed, what it cost, what is next.
 
+## 2026-11-03 — Every panel reachable; frontend wired to the whole backend
+
+The UI showed six model recommendations but not the 12-model catalogue, and agents and skills
+but not commands or rules — the backend returned data nothing rendered.
+
+- inspector split into four tabs (Device, Models, Agents, Memory); only one panel is shown
+- below 1200px the inspector is a drawer opened from a button, instead of being hidden (K-09)
+- full catalogue table with best quant per model, plus the quantisation levels
+- commands and rules listed; `agents_catalog` now returns them
+- 45 UI checks (was 38), including that the drawer actually opens
+
+**Two defects found by rendering:** the drawer button sat on top of the Build button, and
+`wireInspector()` was never called because the patch anchored on the wrong line — the DOM
+checks caught the second, the screenshot caught the first.
+
 ## 2026-11-03 — APEX-X constitution adopted; memory system created
 
 Loaded `master-agent-constitution` and `capability-evolution`. Created the seven memory files

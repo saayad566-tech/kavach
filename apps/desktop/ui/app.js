@@ -44,6 +44,75 @@ async function call(command, args = {}) {
   return envelope;
 }
 
+// The inspector holds four panels; showing all of them at once was a scroll, not a UI.
+function selectTab(name) {
+  const map = {
+    device: 'device-card',
+    models: 'models-card',
+    agents: 'agents-card',
+    memory: 'memory-card',
+  };
+  for (const [key, id] of Object.entries(map)) {
+    const card = el(id);
+    const tab = el('tab-' + key);
+    if (card) card.classList.toggle('active', key === name);
+    if (tab) tab.setAttribute('aria-selected', String(key === name));
+  }
+}
+
+function wireInspector() {
+  for (const key of ['device', 'models', 'agents', 'memory']) {
+    const tab = el('tab-' + key);
+    if (tab) tab.addEventListener('click', () => selectTab(key));
+  }
+  selectTab('device');
+
+  // Narrow windows: the inspector is a drawer, opened from a floating button.
+  const toggle = el('inspector-toggle');
+  const inspector = el('inspector');
+  if (toggle && inspector) {
+    toggle.addEventListener('click', () => {
+      const open = inspector.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? 'Close' : 'Details';
+    });
+  }
+}
+
+// The whole catalogue, so the six recommendations are not the only models a user can see.
+function renderCatalogue(catalog) {
+  const tbody = document.querySelector('#catalogue tbody');
+  if (!tbody) return;
+  tbody.replaceChildren(
+    ...(catalog.specs || []).map((spec) => {
+      const tr = document.createElement('tr');
+      const cells = [
+        spec.name,
+        spec.bestQuant === 'none' ? 'too large' : spec.bestQuant,
+        spec.sizeBytes ? human(spec.sizeBytes) : '—',
+        spec.licence,
+      ];
+      for (const text of cells) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.append(td);
+      }
+      return tr;
+    }),
+  );
+
+  const quants = el('quant-list');
+  if (quants) {
+    quants.replaceChildren(
+      ...(catalog.quants || []).map((quant) => {
+        const li = document.createElement('li');
+        li.textContent = quant.id + ' — quality ' + quant.quality + ', ' + quant.note;
+        return li;
+      }),
+    );
+  }
+}
+
 async function boot() {
   if (!invoke) {
     setBadge('not running in the desktop shell', 'bad');
@@ -51,6 +120,7 @@ async function boot() {
     return;
   }
   try {
+    wireInspector();
     const workspace = await call('workspace_root');
     state.workspace = workspace.path;
     setBadge('desktop shell · local only', 'ok');
@@ -424,6 +494,18 @@ async function loadAgents(task) {
       }),
     );
 
+    const fillList = (id, items) => {
+      const list = el(id);
+      if (!list) return;
+      list.replaceChildren(...(items || []).map((item) => {
+        const li = document.createElement('li');
+        li.textContent = item.name + ' — ' + item.description;
+        return li;
+      }));
+    };
+    fillList('command-list', catalog.commands);
+    fillList('rule-list', catalog.rules);
+
     el('skill-list').replaceChildren(
       ...(catalog.skills || []).map((skill) => {
         const li = document.createElement('li');
@@ -443,6 +525,7 @@ async function loadCatalog() {
   if (!budget) return;
   try {
     const catalog = await call('model_catalog', { workspace: state.workspace || '.' });
+    renderCatalogue(catalog);
     budget.textContent =
       'Budget for model weights: ' + human(catalog.budgetBytes) +
       ' (70% of free memory, or GPU memory when there is a real one).';

@@ -25,9 +25,9 @@ Tick only what a command proved. Unticked items are in `KNOWN_ISSUES.md`.
 ## Desktop
 
 - [x] 24 of 27 commands reachable from the UI; 3 internal by documented decision
-- [x] 38 UI checks: render, labels, focus, live regions, no error banner
+- [x] 45 UI checks: render, labels, focus, live regions, tabs, drawer, no error banner
 - [x] ChatGPT-style shell: project rail, thread, composer, inspector
-- [ ] Inspector reachable below 1200px (K-09)
+- [x] Inspector reachable below 1200px — drawer opened from a button
 
 ## Delivery
 
