@@ -35,4 +35,6 @@ step. If an item is fixed, delete it rather than marking it done.
 - ~~`map_tool` rejected the local tool names it advertises~~ (2.0.0).
 - ~~The tree was replaced by a single-file snapshot~~ (1.7.0) — recovered from the parent commit.
 - ~~The inspector was hidden below 1200px~~ (2.5.0) — now a drawer, opened from a button.
+- ~~The platform could not run without a system webview~~ (3.0.0) — `kavach-server` serves the
+  same UI and command surface over loopback.
 - ~~`crates.io` recorded as blocked~~ — only the website is; the sparse index and crate files download.

@@ -2,6 +2,22 @@
 
 Newest first. One entry per session: what changed, what it cost, what is next.
 
+## 2026-11-03 — Full stack: the platform runs in a browser
+
+The desktop shell needs a system webview, which this machine does not have — so until now the
+product could not be run at all. Wrote a PRD, then built `kavach-server`: one process serving
+the UI and all 27 commands over loopback, zero dependencies, one thread per connection.
+
+- `httpd.rs` — request parsing, routing, dispatch, static files; 12 tests
+- every command dispatches over HTTP, enforced by a test that walks `COMMAND_NAMES`
+- the UI switches transport in one `call()`: Tauri IPC when embedded, fetch when served
+- verified end to end: server started, project created, catalogue and agents returned, UI
+  rendered in a browser showing real hardware from the Rust probe
+
+**Two bugs the tests caught:** the parser accepted a request line with no HTTP version, and my
+own traversal test was wrong — `//etc/passwd` resolves *inside* the UI root, which is safe; the
+dangerous case, `/../../etc/passwd`, is refused.
+
 ## 2026-11-03 — Every panel reachable; frontend wired to the whole backend
 
 The UI showed six model recommendations but not the 12-model catalogue, and agents and skills

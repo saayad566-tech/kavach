@@ -4,7 +4,21 @@
 // Tauri command. `invoke` returns the command's JSON envelope, so errors are rendered
 // rather than thrown into the console.
 
+// Two transports, one codebase: Tauri IPC when embedded, HTTP when the server hosts the page.
+// The command names and envelopes are identical, so nothing below this line knows which is in
+// use — which is what stops the two hosts drifting apart.
 const invoke = window.__TAURI__?.invoke;
+
+async function httpCall(command, args) {
+  const response = await fetch('/api/' + encodeURIComponent(command), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(args ?? {}),
+  });
+  const envelope = await response.json().catch(() => null);
+  if (!envelope) throw new Error(`command ${command} returned no JSON (status ${response.status})`);
+  return envelope;
+}
 
 const el = (id) => document.getElementById(id);
 const state = { workspace: null, projectId: null, projectDir: null, runtime: null };
@@ -34,8 +48,7 @@ function human(bytes) {
 }
 
 async function call(command, args = {}) {
-  if (!invoke) throw new Error('Tauri IPC is unavailable — this page must run inside the desktop shell.');
-  const envelope = await invoke(command, args);
+  const envelope = invoke ? await invoke(command, args) : await httpCall(command, args);
   if (!envelope || envelope.ok !== true) {
     const error = new Error(envelope?.error ?? `command ${command} failed`);
     error.kind = envelope?.kind;
@@ -114,16 +127,13 @@ function renderCatalogue(catalog) {
 }
 
 async function boot() {
-  if (!invoke) {
-    setBadge('not running in the desktop shell', 'bad');
-    showError('This page is the Kavach desktop UI. Launch the installed application rather than opening the file directly.');
-    return;
-  }
+  // No IPC means the page is being served by kavach-server, which is a supported host.
+  const transport = invoke ? 'desktop shell' : 'local server';
   try {
     wireInspector();
     const workspace = await call('workspace_root');
     state.workspace = workspace.path;
-    setBadge('desktop shell · local only', 'ok');
+    setBadge(transport + ' · local only', 'ok');
     await loadDevice();
     await loadRuntime();
     await loadModels();

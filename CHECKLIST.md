@@ -29,6 +29,13 @@ Tick only what a command proved. Unticked items are in `KNOWN_ISSUES.md`.
 - [x] ChatGPT-style shell: project rail, thread, composer, inspector
 - [x] Inspector reachable below 1200px — drawer opened from a button
 
+## Full stack
+
+- [x] `kavach-server` serves the UI and every command over loopback
+- [x] All 27 commands dispatch over HTTP (enforced by a test that walks `COMMAND_NAMES`)
+- [x] Unknown command → 404, bad JSON → 400, traversal → 404 (tested)
+- [x] The UI runs in a browser with no Tauri, verified by rendering it against the real server
+
 ## Delivery
 
 - [x] `scripts/verify-all.sh` — 10 checks green

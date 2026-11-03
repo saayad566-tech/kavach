@@ -85,6 +85,20 @@ cd examples/stocklab && npm test     # 20 tests
 
 It is an example, not the product. Kavach builds applications; this is one of them.
 
+## Run it
+
+```bash
+cargo run --bin kavach-server --release
+# Kavach on http://127.0.0.1:4780
+```
+
+One process serves the UI and the whole command surface over loopback — no Tauri, no system
+webview, no account. The desktop shell (`apps/desktop`) runs the same UI against the same
+commands over IPC; one `call()` switches transport, so the two hosts cannot drift.
+
+`KAVACH_PORT` and `KAVACH_WORKSPACE` change the port and the data directory. The server binds
+`127.0.0.1` only and has no authentication: it is a local tool, not a service.
+
 ## Get the code
 
 ```bash
@@ -157,6 +171,7 @@ checklist and the signing procedure.
 |---|---|
 | `FEATURES.md` | Everything a generated application can do, with the tests that prove it |
 | `FREE.md` | What "free" means here, and how it is verified |
+| `PRD.md` | Requirements, scope, acceptance criteria and risks for this release |
 | `PROJECT_SPEC.md` | What the product is, for whom, and what "done" means |
 | `MASTER_BLUEPRINT.md` | The architecture, the data flow, and the invariants that must not break |
 | `DESIGN_SYSTEM.md` | Colour, type, layout and accessibility rules for the desktop UI |
