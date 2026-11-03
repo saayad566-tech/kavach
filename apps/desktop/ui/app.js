@@ -129,6 +129,7 @@ async function loadRuntime() {
 }
 
 async function showRequirements() {
+  requestAnimationFrame(() => el('requirements-card').scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   showError('');
   try {
     const reqs = await call('extract_requirements', { prompt: el('prompt').value });
@@ -192,6 +193,8 @@ async function build() {
 
 function renderReport(report) {
   el('report-card').hidden = false;
+  // The report is the reply; bring it into view rather than leaving the user at the composer.
+  requestAnimationFrame(() => el('report-card').scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   el('report-sub').textContent = `${report.tasksVerified.length} verified · ${report.tasksUnverified.length} unverified · ${(report.durationMs / 1000).toFixed(1)}s`;
   el('stages').replaceChildren(
     ...report.stages.map((stage) => {
@@ -460,7 +463,7 @@ async function loadCatalog() {
       const action = document.createElement('td');
       const use = document.createElement('button');
       use.className = 'link';
-      use.textContent = 'Use this file…';
+      use.textContent = 'Use';
       use.addEventListener('click', () => {
         // Pre-fill the install form with what the recommendation implies.
         el('model-id').value = rec.id + '-' + rec.quant.toLowerCase();
@@ -706,6 +709,22 @@ async function exportProject() {
 el('build').addEventListener('click', build);
 el('export').addEventListener('click', exportProject);
 el('preview-req').addEventListener('click', showRequirements);
+if (el('new-project')) {
+  el('new-project').addEventListener('click', () => {
+    state.projectId = null;
+    state.projectDir = null;
+    el('prompt').value = '';
+    el('report-card').hidden = true;
+    el('requirements-card').hidden = true;
+    for (const id of ['export', 'checkpoint', 'rescan']) {
+      const button = el(id);
+      if (button) button.disabled = true;
+    }
+    el('busy').textContent = '';
+    showError('');
+    el('prompt').focus();
+  });
+}
 el('checkpoint').addEventListener('click', checkpointNow);
 el('rescan').addEventListener('click', rescan);
 el('install-form').addEventListener('submit', installModel);

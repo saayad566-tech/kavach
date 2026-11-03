@@ -3,182 +3,204 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
-    <title>Kavach</title>
+    <title>Kavach — build applications on your machine</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to main content</a>
-    <header>
-      <div>
-        <h1>Kavach</h1>
-        <p class="muted">Local-first application builder · no account · no telemetry</p>
-      </div>
-      <span id="host-badge" class="pill" role="status" aria-live="polite">connecting…</span>
-    </header>
+    <a class="skip-link" href="#main">Skip to content</a>
 
-    <main id="main">
-      <section class="card" id="device-card">
-        <h2>This device</h2>
-        <p class="muted" id="device-sub">Probing…</p>
-        <dl class="facts" id="device-facts"></dl>
-        <details id="unmeasured-details">
-          <summary>What the probe could not measure</summary>
-          <ul id="unmeasured" class="tight"></ul>
-        </details>
-      </section>
-
-      <section class="card">
-        <h2>Build something</h2>
-        <p class="notice" id="inference-notice" role="status" aria-live="polite">
-          <strong>Checking for a local model…</strong>
-        </p>
-        <label class="field">
-          <span>What do you want to build?</span>
-          <textarea id="prompt" rows="3">Build a web app to manage invoices and clients with search and export</textarea>
-        </label>
-        <div class="row">
-          <button id="build" class="primary">Build it</button>
-          <button id="preview-req">Show requirements</button>
-          <button id="export" disabled>Export project…</button>
-          <button id="checkpoint" disabled>Checkpoint now</button>
-          <button id="rescan" disabled>Re-scan for secrets</button>
-          <span id="busy" class="muted" role="status" aria-live="polite"></span>
+    <div class="app">
+      <!-- ---------------------------------------------------------------- sidebar -->
+      <aside class="sidebar" aria-label="Projects">
+        <div class="sidebar-head">
+          <span class="brand">Kavach</span>
+          <button id="new-project" class="ghost" title="Start a new project">New</button>
         </div>
-        <p id="error" class="error" role="alert" hidden></p>
-      </section>
 
-      <section class="card" id="requirements-card" hidden>
-        <h2>What Kavach understood</h2>
-        <p class="muted" id="req-sub"></p>
-        <div id="req-body"></div>
-      </section>
+        <nav class="sidebar-scroll">
+          <ul id="projects" class="project-list"></ul>
+          <p id="projects-empty" class="sidebar-empty">Nothing yet. Describe an application below.</p>
+        </nav>
 
-      <section class="card" id="report-card" hidden>
-        <h2>Delivery report</h2>
-        <p class="muted" id="report-sub"></p>
-        <table class="grid">
-          <thead><tr><th>Stage</th><th>Result</th><th>Detail</th></tr></thead>
-          <tbody id="stages"></tbody>
-        </table>
-        <h3>Model contribution</h3>
-        <p id="model-files" class="muted"></p>
-        <h3>Security scan</h3>
-        <p id="security" class="muted"></p>
-        <h3>Limitations</h3>
-        <ul id="limitations" class="tight"></ul>
-        <h3>Files</h3>
-        <ul id="files" class="tight files"></ul>
-        <p class="muted" id="file-hint">Select a file to read it.</p>
-        <pre id="file-view" class="file-view" hidden></pre>
-        <details>
-          <summary>Checkpoints</summary>
-          <ul id="checkpoints" class="tight"></ul>
-        </details>
-      </section>
+        <div class="sidebar-foot">
+          <span id="host-badge" class="badge">connecting…</span>
+        </div>
+      </aside>
 
-      <section class="card" id="models-card">
-        <h2>Local models</h2>
-        <p class="muted">
-          Kavach does not download models. Point it at a file you already have, and it checks
-          the licence and the hash before the file is used.
-        </p>
-        <p class="muted" id="disk-line">Checking disk space…</p>
+      <!-- ---------------------------------------------------------------- main -->
+      <main id="main" class="main">
+        <header class="topbar">
+          <h1>What should Kavach build?</h1>
+          <p class="sub">Applications are generated and verified on this machine. Nothing is sent anywhere.</p>
+        </header>
 
-        <form id="install-form">
-          <label for="model-source">Model file on this machine</label>
-          <input id="model-source" name="source" type="text" placeholder="/path/to/model.gguf" required />
+        <div class="thread" id="thread">
+          <section class="msg assistant" id="report-card" hidden aria-label="Delivery report">
+            <div class="msg-head">
+              <span class="avatar" aria-hidden="true">K</span>
+              <div>
+                <strong>Delivery</strong>
+                <p class="sub" id="report-sub"></p>
+              </div>
+            </div>
 
-          <label for="model-id">Model id</label>
-          <input id="model-id" name="modelId" type="text" placeholder="qwen2.5-coder-7b-q4" required />
+            <table class="grid" aria-label="Pipeline stages">
+              <thead><tr><th>Stage</th><th>Result</th><th>Detail</th></tr></thead>
+              <tbody id="stages"></tbody>
+            </table>
 
-          <label for="model-sha">Expected SHA-256</label>
-          <input id="model-sha" name="sha256" type="text" placeholder="64 hex characters" required />
+            <div class="msg-row">
+              <h3>Model contribution</h3>
+              <p id="model-files" class="sub"></p>
+            </div>
+            <div class="msg-row">
+              <h3>Security scan</h3>
+              <p id="security" class="sub"></p>
+            </div>
+            <div class="msg-row">
+              <h3>Limitations</h3>
+              <ul id="limitations" class="tight"></ul>
+            </div>
+            <div class="msg-row">
+              <h3>Files</h3>
+              <ul id="files" class="tight files"></ul>
+              <p class="sub" id="file-hint">Select a file to read it.</p>
+              <pre id="file-view" class="file-view" hidden></pre>
+            </div>
+            <details class="msg-row">
+              <summary>Checkpoints</summary>
+              <ul id="checkpoints" class="tight"></ul>
+            </details>
+          </section>
 
-          <label for="model-licence">Licence name</label>
-          <input id="model-licence" name="licenceName" type="text" placeholder="Apache-2.0" required />
+          <section class="msg assistant" id="requirements-card" hidden aria-label="Requirements">
+            <div class="msg-head">
+              <span class="avatar" aria-hidden="true">K</span>
+              <div>
+                <strong>Requirements</strong>
+                <p class="sub" id="req-sub"></p>
+              </div>
+            </div>
+            <pre id="req-body" class="file-view"></pre>
+          </section>
+        </div>
 
-          <label class="checkbox">
-            <input id="model-accept" name="accepted" type="checkbox" required />
-            I have read and accept this model's licence
-          </label>
+        <!-- ---------------------------------------------------------------- composer -->
+        <div class="composer">
+          <label class="sr-only" for="prompt">Describe the application you want</label>
+          <textarea id="prompt" rows="3" placeholder="Describe an application — for example: a web app to manage invoices and clients"></textarea>
 
-          <button type="submit" class="primary">Install model</button>
-          <p id="install-error" class="error" role="alert" hidden></p>
-          <p id="install-result" class="muted"></p>
-        </form>
+          <div class="composer-actions">
+            <div class="left">
+              <button id="preview-req" class="ghost">Requirements</button>
+              <button id="export" class="ghost" disabled>Export</button>
+              <button id="checkpoint" class="ghost" disabled>Checkpoint</button>
+              <button id="rescan" class="ghost" disabled>Re-scan</button>
+            </div>
+            <button id="build" class="primary">Build</button>
+          </div>
 
-        <h3>Recommended for this machine</h3>
-        <p class="muted" id="model-budget">Measuring this machine…</p>
-        <table class="grid" id="recommended">
-          <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Fit</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
+          <p id="busy" class="sub" role="status" aria-live="polite"></p>
+          <p id="error" class="error" role="alert" hidden></p>
+          <p id="inference-notice" class="sub" hidden></p>
+        </div>
+      </main>
 
-        <h3>Installed</h3>
-        <p class="muted" id="installed-summary">Nothing installed yet.</p>
-        <table class="grid" id="installed">
-          <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Active</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
+      <!-- ---------------------------------------------------------------- inspector -->
+      <aside class="inspector" aria-label="Details">
+        <section class="card" id="device-card">
+          <h2>This device</h2>
+          <p class="sub" id="device-sub"></p>
+          <ul id="device-facts" class="tight"></ul>
+          <details id="unmeasured-details">
+            <summary>Not measured</summary>
+            <ul id="unmeasured" class="tight"></ul>
+          </details>
+        </section>
 
-        <details>
-          <summary>Verify an existing file</summary>
-          <form id="verify-form">
-            <label for="verify-path">File path</label>
-            <input id="verify-path" name="path" type="text" required />
-            <label for="verify-sha">Expected SHA-256</label>
-            <input id="verify-sha" name="expected" type="text" />
-            <button type="submit">Hash and verify</button>
-            <p id="verify-result" class="muted"></p>
+        <section class="card" id="models-card">
+          <h2>Local models</h2>
+          <p class="sub">Kavach does not download models. Point it at a file you already have; it checks the licence and the hash before the file is used.</p>
+          <p class="sub" id="disk-line">Checking disk space…</p>
+
+          <h3>Recommended for this machine</h3>
+          <p class="sub" id="model-budget">Measuring this machine…</p>
+          <table class="grid" id="recommended">
+            <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Fit</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+
+          <h3>Installed</h3>
+          <p class="sub" id="installed-summary">Nothing installed yet.</p>
+          <table class="grid" id="installed">
+            <thead><tr><th>Model</th><th>Quant</th><th>Size</th><th>Active</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+
+          <form id="install-form">
+            <label for="model-source">Model file on this machine</label>
+            <input id="model-source" name="source" type="text" placeholder="/path/to/model.gguf" required />
+            <label for="model-id">Model id</label>
+            <input id="model-id" name="modelId" type="text" placeholder="qwen2.5-coder-7b-q4" required />
+            <label for="model-sha">Expected SHA-256</label>
+            <input id="model-sha" name="sha256" type="text" placeholder="64 hex characters" required />
+            <label for="model-licence">Licence name</label>
+            <input id="model-licence" name="licenceName" type="text" placeholder="Apache-2.0" required />
+            <label class="checkbox">
+              <input id="model-accept" name="accepted" type="checkbox" required />
+              I have read and accept this model's licence
+            </label>
+            <button type="submit" class="primary">Install model</button>
+            <p id="install-error" class="error" role="alert" hidden></p>
+            <p id="install-result" class="sub"></p>
           </form>
-        </details>
-      </section>
 
-      <section class="card" id="agents-card">
-        <h2>Agents and skills</h2>
-        <p class="muted">
-          The agent, skill, command and rule definitions this platform carries, mapped onto a
-          local model class and this app's allow-listed tools. Nothing here calls a hosted API.
-        </p>
-        <p class="muted" id="agents-summary">Loading…</p>
-        <label for="agent-task">Which skills apply to a task?</label>
-        <input id="agent-task" type="text" placeholder="review this code for security issues" />
-        <table class="grid" id="agent-list">
-          <thead><tr><th>Agent</th><th>Model class</th><th>Tools</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <h3>Skills</h3>
-        <ul id="skill-list" class="tight"></ul>
-      </section>
+          <details>
+            <summary>Verify an existing file</summary>
+            <form id="verify-form">
+              <label for="verify-path">File path</label>
+              <input id="verify-path" name="path" type="text" required />
+              <label for="verify-sha">Expected SHA-256</label>
+              <input id="verify-sha" name="expected" type="text" />
+              <button type="submit" class="ghost">Hash and verify</button>
+              <p id="verify-result" class="sub"></p>
+            </form>
+          </details>
+        </section>
 
-      <section class="card" id="memory-card">
-        <h2>Project memory</h2>
-        <p class="muted">
-          What the build actually recorded: every task with its state and the evidence that
-          closed it, and the notes left behind. A task cannot read as verified without evidence.
-        </p>
-        <p class="muted" id="memory-summary">Open a project to see its ledger.</p>
-        <table class="grid" id="tasks">
-          <thead><tr><th>Task</th><th>State</th><th>Evidence</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <h3>Notes</h3>
-        <ul id="notes" class="tight"></ul>
-      </section>
+        <section class="card" id="agents-card">
+          <h2>Agents and skills</h2>
+          <p class="sub">
+            The agent, skill, command and rule definitions this platform carries, mapped onto a
+            local model class and this app's allow-listed tools. Nothing here calls a hosted API.
+          </p>
+          <p class="sub" id="agents-summary">Loading…</p>
+          <label for="agent-task">Which skills apply to a task?</label>
+          <input id="agent-task" type="text" placeholder="review this code for security issues" />
+          <table class="grid" id="agent-list">
+            <thead><tr><th>Agent</th><th>Model class</th><th>Tools</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <h3>Skills</h3>
+          <ul id="skill-list" class="tight"></ul>
+        </section>
 
-      <section class="card">
-        <h2>Projects</h2>
-        <ul id="projects" class="tight"></ul>
-        <p class="muted" id="projects-empty">Nothing yet.</p>
-      </section>
-    </main>
-
-    <footer class="muted">
-      Everything here runs on this machine. The window holds no filesystem or shell
-      permission; it can only call the commands listed in the Rust shell, which apply the
-      command allow-list, the timeout clamp and the path guard.
-    </footer>
+        <section class="card" id="memory-card">
+          <h2>Project memory</h2>
+          <p class="sub">
+            What the build recorded: every task with its state and the evidence that closed it.
+            A task cannot read as verified without evidence.
+          </p>
+          <p class="sub" id="memory-summary">Open a project to see its ledger.</p>
+          <table class="grid" id="tasks">
+            <thead><tr><th>Task</th><th>State</th><th>Evidence</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <h3>Notes</h3>
+          <ul id="notes" class="tight"></ul>
+        </section>
+      </aside>
+    </div>
 
     <script src="app.js"></script>
   </body>
