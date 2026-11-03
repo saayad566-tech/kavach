@@ -1,0 +1,28 @@
+AI R&D ACTIVITY LOG — Kavach
+============================
+
+Session: 2026-11-03
+Agent: APEX-X (master-agent-constitution v2.0, capability-evolution)
+
+WHAT I DID
+1. Loaded the operating constitution before acting, as it requires.
+2. Found the project had no memory system: every session started by rediscovering the state.
+   Created seven files at the repository root that record the spec, the architecture, the
+   design tokens, every decision with its cost, every known defect, the checklist and this log.
+3. Wrote them from the real project state, not from a template — the known-issues list names
+   the three release blockers and the three environment limits, and the decisions file records
+   the three mistakes that cost time in earlier sessions.
+
+WHAT I VERIFIED
+- 142 files in the repository at commit 16d8441f.
+- The seven files exist and contain project-specific content.
+
+WHAT IS NOT DONE
+- No installer matches the current commit (K-01).
+- The Windows smoke test has never run (K-02).
+- Binaries are unsigned (K-03).
+- The agent execution loop is not built (K-07).
+
+HONEST NOTE
+The memory files are only worth having if they are read. They are now the first thing to open
+in a new session, and the last thing to update before a commit.

@@ -157,6 +157,14 @@ checklist and the signing procedure.
 |---|---|
 | `FEATURES.md` | Everything a generated application can do, with the tests that prove it |
 | `FREE.md` | What "free" means here, and how it is verified |
+| `PROJECT_SPEC.md` | What the product is, for whom, and what "done" means |
+| `MASTER_BLUEPRINT.md` | The architecture, the data flow, and the invariants that must not break |
+| `DESIGN_SYSTEM.md` | Colour, type, layout and accessibility rules for the desktop UI |
+| `DECISIONS.md` | Every decision with the cost it accepted |
+| `KNOWN_ISSUES.md` | Every defect and gap, with a next step — the honest list |
+| `CHECKLIST.md` | What is proven, tick by tick |
+| `PROGRESS_LOG.md` | Session history, newest first |
+| `VERIFICATION-REPORT.md` | The verification method and its results |
 | `AUDIT.md` | Deep audit: method, research findings, 8 defects, compliance matrix |
 | `PRODUCTION-READINESS.md` | Criteria, honest status, and the path to shippable |
 | `WINDOWS-BUILD.md` | Reproducible build and signing procedure |
